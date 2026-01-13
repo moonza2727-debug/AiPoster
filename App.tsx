@@ -243,8 +243,8 @@ const App: React.FC = () => {
       </nav>
 
       <main className="flex-1 container mx-auto p-4 md:p-10 flex flex-col lg:flex-row gap-10">
-        {/* Sidebar: Controls */}
-        <div className="w-full lg:w-[440px] flex flex-col gap-6 shrink-0 custom-scrollbar lg:overflow-y-auto lg:max-h-[calc(100vh-160px)] pr-0 lg:pr-2">
+        {/* Sidebar: Controls - Updated with Sticky behavior instead of fixed max-height */}
+        <div className="w-full lg:w-[440px] flex flex-col gap-6 shrink-0 lg:sticky lg:top-28 lg:self-start">
           
           {/* Assets Section */}
           <section className="glass rounded-[40px] p-8 border-white/10 space-y-8 shadow-xl relative overflow-hidden">
@@ -486,6 +486,7 @@ const App: React.FC = () => {
             )}
           </div>
 
+          {/* History Section */}
           <section className="glass rounded-[40px] p-8 border-white/5 shadow-2xl overflow-hidden relative">
             <div className="flex items-center gap-4 mb-6">
               <History className="w-4 h-4 text-slate-600" />
@@ -532,8 +533,6 @@ const App: React.FC = () => {
       </footer>
 
       <style dangerouslySetInnerHTML={{ __html: `
-        .custom-scrollbar::-webkit-scrollbar { width: 4px; }
-        .custom-scrollbar::-webkit-scrollbar-thumb { background: rgba(255, 255, 255, 0.05); border-radius: 10px; }
         .scrollbar-hide::-webkit-scrollbar { display: none; }
         @keyframes shake { 0%, 100% { transform: translateX(0); } 25% { transform: translateX(-4px); } 75% { transform: translateX(4px); } }
         .animate-shake { animation: shake 0.3s ease-in-out; }
