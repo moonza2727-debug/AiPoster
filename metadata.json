@@ -1,7 +1,5 @@
 {
-  "name": "OTOP Nan Smart Poster",
-  "description": "ระบบสร้างโปสเตอร์สินค้า OTOP จังหวัดน่านอัจฉริยะ พร้อมระบบลบพื้นหลังและใส่โลโก้",
-  "requestFramePermissions": [
-    "camera"
-  ]
+  "name": "Striking Posters",
+  "description": "ระบบสร้างโปสเตอร์สินค้า OTOP น่านอัจฉริยะ โดย สพจ.น่าน",
+  "requestFramePermissions": []
 }

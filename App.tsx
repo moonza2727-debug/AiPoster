@@ -14,12 +14,13 @@ import {
   EyeOff,
   Plus,
   Type,
-  ChevronRight,
   Layout,
   Info,
   Layers,
   ShieldCheck,
-  Wand2
+  Wand2,
+  Copy,
+  Check
 } from 'lucide-react';
 import { AspectRatio, PosterStyle, GeneratedPoster, GenerationConfig } from './types';
 import { STYLE_PRESETS, ASPECT_RATIOS, LOADING_MESSAGES } from './constants';
@@ -41,6 +42,7 @@ const App: React.FC = () => {
   const [aiSlogans, setAiSlogans] = useState<string[]>([]);
   const [loadingMsgIndex, setLoadingMsgIndex] = useState(0);
   const [error, setError] = useState<string | null>(null);
+  const [copiedIndex, setCopiedIndex] = useState<number | null>(null);
   
   const [productImage, setProductImage] = useState<string | null>(null);
   const [logos, setLogos] = useState<Logo[]>([]);
@@ -93,6 +95,7 @@ const App: React.FC = () => {
       return;
     }
     setIsSloganLoading(true);
+    setAiSlogans([]);
     try {
       const slogans = await generatePosterSlogan(prompt);
       setAiSlogans(slogans);
@@ -199,19 +202,26 @@ const App: React.FC = () => {
     }
   };
 
+  const copySlogan = (text: string, index: number) => {
+    navigator.clipboard.writeText(text);
+    setCopiedIndex(index);
+    setPosterText(text);
+    setTimeout(() => setCopiedIndex(null), 2000);
+  };
+
   return (
-    <div className="min-h-screen flex flex-col bg-[#020408] text-slate-200">
+    <div className="min-h-screen flex flex-col bg-[#020408] text-slate-200 selection:bg-amber-500/30">
       {/* Navbar */}
       <nav className="glass sticky top-0 z-50 px-6 md:px-12 py-5 flex items-center justify-between border-b border-white/5 shadow-2xl">
         <div className="flex items-center gap-4">
-          <div className="bg-gradient-to-tr from-amber-500 to-orange-600 p-2.5 rounded-2xl shadow-lg">
+          <div className="bg-gradient-to-tr from-amber-500 to-orange-600 p-2.5 rounded-2xl shadow-lg shadow-orange-600/20">
             <Sparkles className="w-6 h-6 text-white" />
           </div>
           <div>
             <h1 className="text-xl font-black tracking-tighter text-white uppercase italic">Striking <span className="text-amber-500">Posters</span></h1>
             <p className="text-[9px] uppercase tracking-[0.3em] text-slate-500 font-bold flex items-center gap-2">
                <span className="w-1.5 h-1.5 bg-green-500 rounded-full animate-pulse"></span>
-               AI Smart Studio
+               OTOP Nan AI Studio
             </p>
           </div>
         </div>
@@ -293,19 +303,19 @@ const App: React.FC = () => {
 
             <div className="space-y-6">
               <div className="space-y-3">
-                 <label className="text-[10px] text-slate-500 uppercase font-black tracking-widest ml-1">รายละเอียดสินค้า (เพื่อให้ AI ช่วยคิด)</label>
+                 <label className="text-[10px] text-slate-500 uppercase font-black tracking-widest ml-1">รายละเอียดสินค้า</label>
                  <textarea
                   value={prompt}
                   onChange={(e) => setPrompt(e.target.value)}
                   placeholder="เช่น: กาแฟน่าน คั่วกลาง หอมกลิ่นดอกไม้ป่า..."
-                  className="w-full h-24 bg-slate-900/40 border border-white/10 rounded-2xl p-5 text-sm outline-none resize-none focus:ring-2 focus:ring-amber-500 transition-all"
+                  className="w-full h-24 bg-slate-900/40 border border-white/10 rounded-2xl p-5 text-sm outline-none resize-none focus:ring-2 focus:ring-amber-500 transition-all placeholder:text-slate-700"
                 />
               </div>
 
               <div className="bg-amber-500/5 p-6 rounded-[32px] border border-amber-500/10 shadow-inner">
                 <div className="flex items-center justify-between mb-4">
                   <label className="flex items-center gap-2 text-[10px] text-amber-500 uppercase font-black tracking-widest">
-                    <Type className="w-4 h-4" /> ข้อความหลัก (Typography)
+                    <Type className="w-4 h-4" /> ข้อความหลัก
                   </label>
                   <button 
                     onClick={handleAiSlogan}
@@ -326,16 +336,19 @@ const App: React.FC = () => {
                 />
 
                 {aiSlogans.length > 0 && (
-                  <div className="space-y-2 animate-in fade-in duration-500">
-                    <p className="text-[8px] text-slate-600 uppercase font-black tracking-widest mb-1">คำแนะนำจาก AI:</p>
-                    <div className="flex flex-wrap gap-2">
+                  <div className="space-y-2 animate-in slide-in-from-top-2 duration-500">
+                    <p className="text-[8px] text-slate-600 uppercase font-black tracking-widest mb-1">เลือกคำที่ชอบ:</p>
+                    <div className="flex flex-col gap-2">
                       {aiSlogans.map((s, idx) => (
                         <button 
                           key={idx}
-                          onClick={() => setPosterText(s)}
-                          className="text-[9px] bg-white/5 hover:bg-white/10 border border-white/10 px-3 py-1.5 rounded-xl text-slate-300 transition-all"
+                          onClick={() => copySlogan(s, idx)}
+                          className={`text-[9px] w-full flex items-center justify-between px-4 py-2.5 rounded-xl border transition-all text-left ${
+                            posterText === s ? 'bg-amber-500/10 border-amber-500/50 text-amber-500' : 'bg-white/5 border-white/5 text-slate-400 hover:bg-white/10'
+                          }`}
                         >
-                          {s}
+                          <span className="truncate">{s}</span>
+                          {copiedIndex === idx ? <Check className="w-3 h-3 shrink-0" /> : <Copy className="w-3 h-3 shrink-0 opacity-40" />}
                         </button>
                       ))}
                     </div>
@@ -344,7 +357,7 @@ const App: React.FC = () => {
               </div>
 
               <div className="space-y-3">
-                <label className="text-[10px] text-slate-500 uppercase font-black tracking-widest ml-1">ขนาดภาพ (Aspect Ratio)</label>
+                <label className="text-[10px] text-slate-500 uppercase font-black tracking-widest ml-1">ขนาดภาพ</label>
                 <div className="grid grid-cols-5 gap-1.5">
                   {ASPECT_RATIOS.map((ratio) => (
                     <button
@@ -397,7 +410,7 @@ const App: React.FC = () => {
               onClick={handleGenerate}
               disabled={isGenerating}
               className={`w-full py-6 rounded-[35px] flex items-center justify-center gap-4 font-black uppercase tracking-[0.4em] transition-all text-[11px] shadow-2xl ${
-                isGenerating ? 'bg-slate-800 text-slate-600 cursor-not-allowed' : 'bg-gradient-to-r from-amber-600 to-orange-600 text-white hover:shadow-orange-600/40 active:scale-95'
+                isGenerating ? 'bg-slate-800 text-slate-600 cursor-not-allowed' : 'bg-gradient-to-r from-amber-600 to-orange-600 text-white hover:shadow-orange-600/40 active:scale-95 shadow-orange-600/10'
               }`}
             >
               {isGenerating ? <RefreshCw className="animate-spin w-5 h-5" /> : <Sparkles className="w-5 h-5" />}
@@ -409,17 +422,20 @@ const App: React.FC = () => {
         {/* Preview Panel */}
         <div className="flex-1 flex flex-col gap-10">
           <div className="glass rounded-[60px] p-6 md:p-14 flex flex-col items-center justify-center min-h-[660px] border-white/5 relative overflow-hidden shadow-2xl">
+            {/* Grain Overlay */}
+            <div className="absolute inset-0 opacity-[0.03] pointer-events-none mix-blend-overlay bg-[url('https://grainy-gradients.vercel.app/noise.svg')]"></div>
+            
             {isGenerating ? (
               <div className="text-center space-y-10 z-10 animate-pulse">
                 <div className="w-24 h-24 border-[3px] border-amber-500/10 border-t-amber-500 rounded-full animate-spin mx-auto shadow-lg shadow-amber-500/20"></div>
                 <div className="space-y-4">
-                  <h3 className="text-2xl font-black text-white uppercase tracking-[0.2em] italic">{LOADING_MESSAGES[loadingMsgIndex]}</h3>
+                  <h3 className="text-2xl font-black text-white uppercase tracking-[0.2em] italic max-w-lg mx-auto leading-relaxed">{LOADING_MESSAGES[loadingMsgIndex]}</h3>
                   <p className="text-slate-600 text-[10px] font-black tracking-[0.5em] uppercase">Powered by Gemini AI PRO Engine</p>
                 </div>
               </div>
             ) : currentPoster ? (
-              <div className="w-full flex flex-col gap-10 items-center animate-in fade-in duration-1000">
-                <div className="relative group max-w-full shadow-[0_50px_100px_rgba(0,0,0,0.8)] rounded-[50px] overflow-hidden border border-white/10 bg-black p-2 transition-transform hover:scale-[1.01]">
+              <div className="w-full flex flex-col gap-10 items-center animate-in fade-in zoom-in-95 duration-1000">
+                <div className="relative group max-w-full shadow-[0_50px_100px_rgba(0,0,0,0.8)] rounded-[50px] overflow-hidden border border-white/10 bg-black p-2 transition-transform hover:scale-[1.01] cursor-zoom-in">
                   <canvas ref={canvasRef} className="hidden" />
                   <img src={currentPoster.url} alt="Result" className="max-h-[600px] w-auto rounded-[46px] object-contain shadow-2xl" />
                   <div className="absolute top-10 right-10 flex flex-row-reverse gap-4 drop-shadow-2xl pointer-events-none">
@@ -444,10 +460,10 @@ const App: React.FC = () => {
                 </div>
               </div>
             ) : (
-              <div className="text-center max-w-md space-y-12">
-                <div className="w-32 h-32 bg-slate-950 rounded-[45px] flex items-center justify-center mx-auto border border-white/5 shadow-2xl relative">
-                  <ImageIcon className="w-14 h-14 text-slate-800" />
-                  <div className="absolute inset-0 bg-amber-500/5 blur-[100px] rounded-full"></div>
+              <div className="text-center max-w-md space-y-12 z-10">
+                <div className="w-32 h-32 bg-slate-950 rounded-[45px] flex items-center justify-center mx-auto border border-white/5 shadow-2xl relative group">
+                  <ImageIcon className="w-14 h-14 text-slate-800 group-hover:text-amber-500/50 transition-colors" />
+                  <div className="absolute inset-0 bg-amber-500/5 blur-[100px] rounded-full group-hover:bg-amber-500/10 transition-colors"></div>
                 </div>
                 <div className="space-y-5">
                   <h3 className="text-4xl font-black text-white uppercase tracking-tighter italic">STRIKING STUDIO</h3>
@@ -470,15 +486,21 @@ const App: React.FC = () => {
             )}
           </div>
 
-          <section className="glass rounded-[40px] p-8 border-white/5 shadow-2xl overflow-hidden">
+          <section className="glass rounded-[40px] p-8 border-white/5 shadow-2xl overflow-hidden relative">
             <div className="flex items-center gap-4 mb-6">
               <History className="w-4 h-4 text-slate-600" />
               <h4 className="text-[10px] font-black text-slate-600 uppercase tracking-[0.6em]">ผลงานล่าสุดของคุณ</h4>
               <div className="h-px flex-1 bg-white/5"></div>
             </div>
-            <div className="flex gap-6 overflow-x-auto pb-4 scrollbar-hide px-2">
+            <div className="flex gap-6 overflow-x-auto pb-6 scrollbar-hide px-2 snap-x snap-mandatory">
               {history.map(item => (
-                <div key={item.id} onClick={() => setCurrentPoster(item)} className={`min-w-[140px] aspect-[3/4] rounded-[28px] overflow-hidden cursor-pointer border-2 transition-all duration-500 ${currentPoster?.id === item.id ? 'border-amber-500 scale-105 shadow-xl shadow-amber-500/20' : 'border-transparent opacity-40 hover:opacity-100'}`}>
+                <div 
+                  key={item.id} 
+                  onClick={() => setCurrentPoster(item)} 
+                  className={`min-w-[140px] aspect-[3/4] rounded-[28px] overflow-hidden cursor-pointer border-2 transition-all duration-500 snap-center ${
+                    currentPoster?.id === item.id ? 'border-amber-500 scale-105 shadow-xl shadow-amber-500/20' : 'border-transparent opacity-40 hover:opacity-100'
+                  }`}
+                >
                   <img src={item.url} className="w-full h-full object-cover" alt="History Item" />
                 </div>
               ))}
@@ -499,10 +521,10 @@ const App: React.FC = () => {
           </div>
           <div className="h-px w-24 bg-white/5"></div>
           <div className="flex flex-col gap-2">
-            <p className="text-[10px] text-slate-400 font-black uppercase tracking-[0.4em]">
+            <p className="text-[10px] text-slate-400 font-black uppercase tracking-widest">
               จัดทำโดย กลุ่มงานสารสนเทศการพัฒนาชุมชน (สพจ.น่าน)
             </p>
-            <p className="text-[8px] text-slate-600 font-bold uppercase tracking-[0.3em]">
+            <p className="text-[8px] text-slate-600 font-bold uppercase tracking-widest">
               © 2025 Nan Provincial Community Development Office
             </p>
           </div>
@@ -510,12 +532,13 @@ const App: React.FC = () => {
       </footer>
 
       <style dangerouslySetInnerHTML={{ __html: `
-        .glass { background: rgba(6, 10, 18, 0.85); backdrop-filter: blur(40px); -webkit-backdrop-filter: blur(40px); }
         .custom-scrollbar::-webkit-scrollbar { width: 4px; }
         .custom-scrollbar::-webkit-scrollbar-thumb { background: rgba(255, 255, 255, 0.05); border-radius: 10px; }
         .scrollbar-hide::-webkit-scrollbar { display: none; }
         @keyframes shake { 0%, 100% { transform: translateX(0); } 25% { transform: translateX(-4px); } 75% { transform: translateX(4px); } }
         .animate-shake { animation: shake 0.3s ease-in-out; }
+        .snap-x { scroll-snap-type: x mandatory; }
+        .snap-center { scroll-snap-align: center; }
       ` }} />
     </div>
   );
