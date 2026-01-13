@@ -91,7 +91,7 @@ export const generatePosterImage = async (config: GenerationConfig): Promise<str
 
     let imageUrl = '';
     const candidates = response.candidates;
-    if (candidates && candidates.length > 0) {
+    if (candidates && candidates.length > 0 && candidates[0].content && candidates[0].content.parts) {
       for (const part of candidates[0].content.parts) {
         if (part.inlineData) {
           imageUrl = `data:${part.inlineData.mimeType};base64,${part.inlineData.data}`;
