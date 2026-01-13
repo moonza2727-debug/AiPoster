@@ -193,7 +193,7 @@ const App: React.FC = () => {
       await renderFinalImage();
       const link = document.createElement('a');
       link.href = canvasRef.current!.toDataURL('image/png', 1.0);
-      link.download = `poster-nan-${Date.now()}.png`;
+      link.download = `poster-ai-${Date.now()}.png`;
       link.click();
     } catch (err) {
       setError("ไม่สามารถดาวน์โหลดภาพได้ในขณะนี้");
@@ -218,10 +218,11 @@ const App: React.FC = () => {
             <Sparkles className="w-6 h-6 text-white" />
           </div>
           <div>
-            <h1 className="text-xl font-black tracking-tighter text-white uppercase italic">Striking <span className="text-amber-500">Posters</span></h1>
+            {/* เปลี่ยนชื่อตรงนี้ครับ จะปรากฏในตัวแอป */}
+            <h1 className="text-xl font-black tracking-tighter text-white uppercase italic">AI <span className="text-amber-500">POSTER</span></h1>
             <p className="text-[9px] uppercase tracking-[0.3em] text-slate-500 font-bold flex items-center gap-2">
                <span className="w-1.5 h-1.5 bg-green-500 rounded-full animate-pulse"></span>
-               OTOP Nan AI Studio
+               Smart Design Studio
             </p>
           </div>
         </div>
@@ -230,7 +231,7 @@ const App: React.FC = () => {
             <span className="text-[8px] font-black text-slate-600 uppercase tracking-widest flex items-center gap-1">
               <ShieldCheck className="w-2.5 h-2.5" /> Official System
             </span>
-            <span className="text-[10px] font-black text-amber-500 uppercase tracking-tighter">กลุ่มงานสารสนเทศฯ สพจ.น่าน</span>
+            <span className="text-[10px] font-black text-amber-500 uppercase tracking-tighter">AI-POWERED STUDIO</span>
           </div>
           <button onClick={() => openKeySelector()} className="hidden sm:block text-[10px] font-black bg-white/5 border border-white/10 px-4 py-2 rounded-xl hover:bg-white/10 transition-all text-slate-400">
             SETTINGS
@@ -243,10 +244,8 @@ const App: React.FC = () => {
       </nav>
 
       <main className="flex-1 container mx-auto p-4 md:p-10 flex flex-col lg:flex-row gap-10">
-        {/* Sidebar: Controls - Updated with Sticky behavior instead of fixed max-height */}
         <div className="w-full lg:w-[440px] flex flex-col gap-6 shrink-0 lg:sticky lg:top-28 lg:self-start">
           
-          {/* Assets Section */}
           <section className="glass rounded-[40px] p-8 border-white/10 space-y-8 shadow-xl relative overflow-hidden">
             <div className="absolute top-0 right-0 w-32 h-32 bg-amber-500/5 blur-3xl rounded-full"></div>
             <h3 className="text-[11px] font-black text-amber-500 flex items-center gap-3 uppercase tracking-[0.3em] border-b border-white/5 pb-5">
@@ -295,7 +294,6 @@ const App: React.FC = () => {
             </div>
           </section>
 
-          {/* Configuration Section */}
           <section className="glass rounded-[40px] p-8 border-white/10 space-y-8 shadow-xl">
             <h3 className="text-[11px] font-black text-amber-500 flex items-center gap-3 uppercase tracking-[0.3em] border-b border-white/5 pb-5">
               <Settings2 className="w-4 h-4" /> 02. ปรับแต่งเนื้อหา AI
@@ -419,10 +417,8 @@ const App: React.FC = () => {
           </section>
         </div>
 
-        {/* Preview Panel */}
         <div className="flex-1 flex flex-col gap-10">
           <div className="glass rounded-[60px] p-6 md:p-14 flex flex-col items-center justify-center min-h-[660px] border-white/5 relative overflow-hidden shadow-2xl">
-            {/* Grain Overlay */}
             <div className="absolute inset-0 opacity-[0.03] pointer-events-none mix-blend-overlay bg-[url('https://grainy-gradients.vercel.app/noise.svg')]"></div>
             
             {isGenerating ? (
@@ -466,19 +462,19 @@ const App: React.FC = () => {
                   <div className="absolute inset-0 bg-amber-500/5 blur-[100px] rounded-full group-hover:bg-amber-500/10 transition-colors"></div>
                 </div>
                 <div className="space-y-5">
-                  <h3 className="text-4xl font-black text-white uppercase tracking-tighter italic">STRIKING STUDIO</h3>
+                  <h3 className="text-4xl font-black text-white uppercase tracking-tighter italic">DESIGN STUDIO</h3>
                   <p className="text-slate-500 text-sm font-bold uppercase tracking-widest leading-loose">
-                    ยกระดับสินค้าชุมชนด้วยงานดีไซน์ระดับสากล <br/> เน้นความ "สะดุดตา" และ Typography ที่ทรงพลัง
+                    เนรมิตผลงานดีไซน์ระดับสากลด้วยพลัง AI <br/> เพื่อภาพลักษณ์ที่ทรงพลังและสะดุดตา
                   </p>
                 </div>
                 <div className="p-6 bg-slate-900/50 rounded-[32px] border border-white/5 flex items-center gap-4 max-w-xs mx-auto">
                    <Info className="w-5 h-5 text-amber-500 shrink-0" />
                    <div className="text-left">
                      <p className="text-[10px] text-slate-400 font-black uppercase tracking-widest leading-relaxed">
-                        พัฒนาโดย กลุ่มงานสารสนเทศฯ
+                        ระบบสร้างสรรค์โปสเตอร์อัจฉริยะ
                      </p>
                      <p className="text-[9px] text-slate-600 font-bold uppercase tracking-widest">
-                        สำนักงานพัฒนาชุมชนจังหวัดน่าน
+                        GENERATE POWERFUL VISUALS
                      </p>
                    </div>
                 </div>
@@ -486,7 +482,6 @@ const App: React.FC = () => {
             )}
           </div>
 
-          {/* History Section */}
           <section className="glass rounded-[40px] p-8 border-white/5 shadow-2xl overflow-hidden relative">
             <div className="flex items-center gap-4 mb-6">
               <History className="w-4 h-4 text-slate-600" />
@@ -514,19 +509,19 @@ const App: React.FC = () => {
       <footer className="p-12 text-center border-t border-white/5 bg-black/40">
         <div className="flex flex-col items-center gap-6">
           <div className="flex flex-wrap items-center justify-center gap-10 text-[10px] text-slate-700 font-black uppercase tracking-[0.5em]">
-            <span>NAN OTOP DESIGN</span>
+            <span>MODERN DESIGN</span>
             <div className="hidden md:block w-1.5 h-1.5 bg-slate-800 rounded-full"></div>
-            <span>AI MARKETING STUDIO</span>
+            <span>AI MARKETING</span>
             <div className="hidden md:block w-1.5 h-1.5 bg-slate-800 rounded-full"></div>
-            <span>PREMIUM TYPOGRAPHY</span>
+            <span>PREMIUM VISUALS</span>
           </div>
           <div className="h-px w-24 bg-white/5"></div>
           <div className="flex flex-col gap-2">
             <p className="text-[10px] text-slate-400 font-black uppercase tracking-widest">
-              จัดทำโดย กลุ่มงานสารสนเทศการพัฒนาชุมชน (สพจ.น่าน)
+              Developed with Advanced AI Technology
             </p>
             <p className="text-[8px] text-slate-600 font-bold uppercase tracking-widest">
-              © 2025 Nan Provincial Community Development Office
+              © 2025 Smart AI Design Studio
             </p>
           </div>
         </div>

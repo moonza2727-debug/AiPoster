@@ -38,7 +38,8 @@ export const generatePosterImage = async (config: GenerationConfig): Promise<str
 
   const ai = new GoogleGenAI({ apiKey });
   
-  const modelName = config.highQuality ? 'gemini-3-pro-image-preview' : 'gemini-2.5-flash-image';
+  // เปลี่ยนมาใช้ gemini-2.5-flash-image เป็นหลัก เพื่อให้ผู้ใช้ทั่วไปไม่ต้อง login เลือก key
+  const modelName = 'gemini-2.5-flash-image';
   
   let parts: any[] = [];
   
@@ -83,8 +84,7 @@ export const generatePosterImage = async (config: GenerationConfig): Promise<str
       contents: { parts },
       config: {
         imageConfig: {
-          aspectRatio: config.aspectRatio as any,
-          ...(config.highQuality ? { imageSize: "1K" } : {})
+          aspectRatio: config.aspectRatio as any
         }
       }
     });
