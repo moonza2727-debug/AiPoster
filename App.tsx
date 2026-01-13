@@ -91,7 +91,7 @@ const App: React.FC = () => {
 
   const handleAiSlogan = async () => {
     if (!prompt.trim()) {
-      setError("กรุณาพิมพ์รายละเอียดสินค้าในช่องด้านล่างก่อน เพื่อให้ AI ช่วยคิดคำพาดหัวครับ");
+      setError("กรุณาพิมพ์รายละเอียดสินค้าก่อน เพื่อให้ AI ช่วยคิดคำพาดหัวครับ");
       return;
     }
     setIsSloganLoading(true);
@@ -218,7 +218,6 @@ const App: React.FC = () => {
             <Sparkles className="w-6 h-6 text-white" />
           </div>
           <div>
-            {/* เปลี่ยนชื่อตรงนี้ครับ จะปรากฏในตัวแอป */}
             <h1 className="text-xl font-black tracking-tighter text-white uppercase italic">AI <span className="text-amber-500">POSTER</span></h1>
             <p className="text-[9px] uppercase tracking-[0.3em] text-slate-500 font-bold flex items-center gap-2">
                <span className="w-1.5 h-1.5 bg-green-500 rounded-full animate-pulse"></span>
@@ -229,13 +228,10 @@ const App: React.FC = () => {
         <div className="flex items-center gap-4">
           <div className="hidden lg:flex flex-col items-end mr-4">
             <span className="text-[8px] font-black text-slate-600 uppercase tracking-widest flex items-center gap-1">
-              <ShieldCheck className="w-2.5 h-2.5" /> Official System
+              <ShieldCheck className="w-2.5 h-2.5" /> Public System
             </span>
             <span className="text-[10px] font-black text-amber-500 uppercase tracking-tighter">AI-POWERED STUDIO</span>
           </div>
-          <button onClick={() => openKeySelector()} className="hidden sm:block text-[10px] font-black bg-white/5 border border-white/10 px-4 py-2 rounded-xl hover:bg-white/10 transition-all text-slate-400">
-            SETTINGS
-          </button>
           <div className="px-4 py-2 bg-amber-500/10 border border-amber-500/20 rounded-full flex items-center gap-2">
             <Zap className="w-3.5 h-3.5 text-amber-500 fill-amber-500" />
             <span className="text-[10px] font-black text-amber-500 uppercase">PRO</span>
@@ -305,7 +301,7 @@ const App: React.FC = () => {
                  <textarea
                   value={prompt}
                   onChange={(e) => setPrompt(e.target.value)}
-                  placeholder="เช่น: กาแฟน่าน คั่วกลาง หอมกลิ่นดอกไม้ป่า..."
+                  placeholder="เช่น: เครื่องดื่มเพื่อสุขภาพ ผสมน้ำผึ้งแท้..."
                   className="w-full h-24 bg-slate-900/40 border border-white/10 rounded-2xl p-5 text-sm outline-none resize-none focus:ring-2 focus:ring-amber-500 transition-all placeholder:text-slate-700"
                 />
               </div>
@@ -329,7 +325,7 @@ const App: React.FC = () => {
                   type="text"
                   value={posterText}
                   onChange={(e) => setPosterText(e.target.value)}
-                  placeholder="เช่น: NAN COFFEE"
+                  placeholder="เช่น: PREMIUM QUALITY"
                   className="w-full bg-slate-950 border border-white/10 rounded-2xl p-4 text-sm font-bold outline-none text-white focus:ring-2 focus:ring-amber-500 transition-all mb-4"
                 />
 
@@ -412,7 +408,7 @@ const App: React.FC = () => {
               }`}
             >
               {isGenerating ? <RefreshCw className="animate-spin w-5 h-5" /> : <Sparkles className="w-5 h-5" />}
-              <span>{isGenerating ? "กำลังเนรมิต..." : "สร้างโปสเตอร์อัจฉริยะ"}</span>
+              <span>{isGenerating ? "กำลังสร้างสรรค์..." : "สร้างโปสเตอร์อัจฉริยะ"}</span>
             </button>
           </section>
         </div>
@@ -426,7 +422,7 @@ const App: React.FC = () => {
                 <div className="w-24 h-24 border-[3px] border-amber-500/10 border-t-amber-500 rounded-full animate-spin mx-auto shadow-lg shadow-amber-500/20"></div>
                 <div className="space-y-4">
                   <h3 className="text-2xl font-black text-white uppercase tracking-[0.2em] italic max-w-lg mx-auto leading-relaxed">{LOADING_MESSAGES[loadingMsgIndex]}</h3>
-                  <p className="text-slate-600 text-[10px] font-black tracking-[0.5em] uppercase">Powered by Gemini AI PRO Engine</p>
+                  <p className="text-slate-600 text-[10px] font-black tracking-[0.5em] uppercase">Powered by Gemini AI Engine</p>
                 </div>
               </div>
             ) : currentPoster ? (
@@ -462,21 +458,10 @@ const App: React.FC = () => {
                   <div className="absolute inset-0 bg-amber-500/5 blur-[100px] rounded-full group-hover:bg-amber-500/10 transition-colors"></div>
                 </div>
                 <div className="space-y-5">
-                  <h3 className="text-4xl font-black text-white uppercase tracking-tighter italic">DESIGN STUDIO</h3>
+                  <h3 className="text-4xl font-black text-white uppercase tracking-tighter italic">AI DESIGN STUDIO</h3>
                   <p className="text-slate-500 text-sm font-bold uppercase tracking-widest leading-loose">
-                    เนรมิตผลงานดีไซน์ระดับสากลด้วยพลัง AI <br/> เพื่อภาพลักษณ์ที่ทรงพลังและสะดุดตา
+                    สร้างสรรค์ผลงานโฆษณาระดับมืออาชีพ <br/> ด้วยขุมพลัง AI รุ่นล่าสุด
                   </p>
-                </div>
-                <div className="p-6 bg-slate-900/50 rounded-[32px] border border-white/5 flex items-center gap-4 max-w-xs mx-auto">
-                   <Info className="w-5 h-5 text-amber-500 shrink-0" />
-                   <div className="text-left">
-                     <p className="text-[10px] text-slate-400 font-black uppercase tracking-widest leading-relaxed">
-                        ระบบสร้างสรรค์โปสเตอร์อัจฉริยะ
-                     </p>
-                     <p className="text-[9px] text-slate-600 font-bold uppercase tracking-widest">
-                        GENERATE POWERFUL VISUALS
-                     </p>
-                   </div>
                 </div>
               </div>
             )}
@@ -509,19 +494,19 @@ const App: React.FC = () => {
       <footer className="p-12 text-center border-t border-white/5 bg-black/40">
         <div className="flex flex-col items-center gap-6">
           <div className="flex flex-wrap items-center justify-center gap-10 text-[10px] text-slate-700 font-black uppercase tracking-[0.5em]">
-            <span>MODERN DESIGN</span>
+            <span>PROFESSIONAL DESIGN</span>
             <div className="hidden md:block w-1.5 h-1.5 bg-slate-800 rounded-full"></div>
-            <span>AI MARKETING</span>
+            <span>FAST GENERATION</span>
             <div className="hidden md:block w-1.5 h-1.5 bg-slate-800 rounded-full"></div>
-            <span>PREMIUM VISUALS</span>
+            <span>HD EXPORT</span>
           </div>
           <div className="h-px w-24 bg-white/5"></div>
           <div className="flex flex-col gap-2">
             <p className="text-[10px] text-slate-400 font-black uppercase tracking-widest">
-              Developed with Advanced AI Technology
+              AI Smart Poster Tool
             </p>
             <p className="text-[8px] text-slate-600 font-bold uppercase tracking-widest">
-              © 2025 Smart AI Design Studio
+              © 2025 AI Creative Design
             </p>
           </div>
         </div>
