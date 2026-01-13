@@ -15,16 +15,17 @@ import {
   Plus,
   Type,
   Layout,
-  Info,
   Layers,
   ShieldCheck,
   Wand2,
   Copy,
-  Check
+  Check,
+  Key,
+  ExternalLink
 } from 'lucide-react';
 import { AspectRatio, PosterStyle, GeneratedPoster, GenerationConfig } from './types';
 import { STYLE_PRESETS, ASPECT_RATIOS, LOADING_MESSAGES } from './constants';
-import { generatePosterImage, openKeySelector, generatePosterSlogan } from './services/gemini';
+import { generatePosterImage, openKeySelector, generatePosterSlogan, hasApiKey } from './services/gemini';
 
 interface Logo {
   id: string;
@@ -43,6 +44,7 @@ const App: React.FC = () => {
   const [loadingMsgIndex, setLoadingMsgIndex] = useState(0);
   const [error, setError] = useState<string | null>(null);
   const [copiedIndex, setCopiedIndex] = useState<number | null>(null);
+  const [isKeySelected, setIsKeySelected] = useState(false);
   
   const [productImage, setProductImage] = useState<string | null>(null);
   const [logos, setLogos] = useState<Logo[]>([]);
@@ -54,6 +56,14 @@ const App: React.FC = () => {
   const canvasRef = useRef<HTMLCanvasElement>(null);
 
   useEffect(() => {
+    const checkKey = async () => {
+      const selected = await hasApiKey();
+      setIsKeySelected(selected);
+    };
+    checkKey();
+  }, []);
+
+  useEffect(() => {
     let interval: number;
     if (isGenerating) {
       interval = window.setInterval(() => {
@@ -62,6 +72,12 @@ const App: React.FC = () => {
     }
     return () => clearInterval(interval);
   }, [isGenerating]);
+
+  const handleOpenKey = async () => {
+    await openKeySelector();
+    setIsKeySelected(true);
+    setError(null);
+  };
 
   const handleProductUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
@@ -95,12 +111,17 @@ const App: React.FC = () => {
       return;
     }
     setIsSloganLoading(true);
+    setError(null);
     setAiSlogans([]);
     try {
       const slogans = await generatePosterSlogan(prompt);
       setAiSlogans(slogans);
     } catch (err: any) {
-      setError("AI ช่วยคิดคำไม่ได้ในขณะนี้ กรุณาลองใหม่");
+      if (err.message === "QUOTA_EXCEEDED") {
+        setError("โควตาฟรีของระบบเต็มแล้ว กรุณากดปุ่ม 'เลือก API Key' เพื่อใช้ Key ส่วนตัวของคุณครับ");
+      } else {
+        setError("AI ไม่สามารถประมวลผลได้ในขณะนี้");
+      }
     } finally {
       setIsSloganLoading(false);
     }
@@ -138,7 +159,11 @@ const App: React.FC = () => {
       setCurrentPoster(newPoster);
       setHistory(prev => [newPoster, ...prev].slice(0, 10));
     } catch (err: any) {
-      setError(err.message || "เกิดข้อผิดพลาดในการเชื่อมต่อกับ AI");
+      if (err.message === "QUOTA_EXCEEDED") {
+        setError("โควตาการสร้างรูปภาพเต็มแล้ว (Error 429) กรุณารอ 1 นาที หรือกดใช้ 'เลือก API Key' ส่วนตัวด้านบนครับ");
+      } else {
+        setError(err.message || "เกิดข้อผิดพลาดในการเชื่อมต่อกับ AI");
+      }
     } finally {
       setIsGenerating(false);
     }
@@ -226,12 +251,15 @@ const App: React.FC = () => {
           </div>
         </div>
         <div className="flex items-center gap-4">
-          <div className="hidden lg:flex flex-col items-end mr-4">
-            <span className="text-[8px] font-black text-slate-600 uppercase tracking-widest flex items-center gap-1">
-              <ShieldCheck className="w-2.5 h-2.5" /> Public System
-            </span>
-            <span className="text-[10px] font-black text-amber-500 uppercase tracking-tighter">AI-POWERED STUDIO</span>
-          </div>
+          <button 
+            onClick={handleOpenKey}
+            className={`hidden md:flex items-center gap-2 px-4 py-2 rounded-full border transition-all text-[10px] font-black uppercase tracking-widest ${
+              isKeySelected ? 'bg-green-500/10 border-green-500/30 text-green-400' : 'bg-amber-500 text-slate-950 border-amber-400 hover:scale-105'
+            }`}
+          >
+            <Key className="w-3.5 h-3.5" />
+            {isKeySelected ? 'API KEY ACTIVE' : 'เลือก API KEY ส่วนตัว'}
+          </button>
           <div className="px-4 py-2 bg-amber-500/10 border border-amber-500/20 rounded-full flex items-center gap-2">
             <Zap className="w-3.5 h-3.5 text-amber-500 fill-amber-500" />
             <span className="text-[10px] font-black text-amber-500 uppercase">PRO</span>
@@ -394,9 +422,28 @@ const App: React.FC = () => {
             </div>
 
             {error && (
-              <div className="p-5 bg-red-500/10 border border-red-500/20 text-red-400 rounded-3xl text-[10px] flex gap-3 font-bold animate-shake">
-                <AlertCircle className="w-5 h-5 shrink-0" />
-                <span>{error}</span>
+              <div className="p-6 bg-red-500/10 border border-red-500/20 text-red-400 rounded-[32px] text-[11px] flex flex-col gap-4 font-bold animate-shake">
+                <div className="flex gap-3">
+                  <AlertCircle className="w-5 h-5 shrink-0" />
+                  <span>{error}</span>
+                </div>
+                {error.includes("โควตา") && (
+                  <div className="flex flex-col gap-2">
+                    <button 
+                      onClick={handleOpenKey}
+                      className="mt-2 text-[9px] bg-amber-500 text-slate-950 px-4 py-2 rounded-xl text-center flex items-center justify-center gap-2 hover:bg-amber-400 transition-all border border-amber-400/50"
+                    >
+                      <Key className="w-3 h-3" /> ตั้งค่า API KEY ส่วนตัว (เพื่อข้ามโควตาฟรี)
+                    </button>
+                    <a 
+                      href="https://ai.google.dev/gemini-api/docs/billing" 
+                      target="_blank" 
+                      className="text-[9px] text-slate-500 underline text-center"
+                    >
+                      วิธีขยายโควตาการใช้งาน (สำหรับเจ้าของโปรเจกต์)
+                    </a>
+                  </div>
+                )}
               </div>
             )}
 
