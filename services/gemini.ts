@@ -2,10 +2,9 @@
 import { GoogleGenAI, Type } from "@google/genai";
 import { GenerationConfig } from "../types";
 
-// ดึง AI Instance พร้อมดึงค่า Key สดๆ ณ วินาทีที่เรียกใช้งาน
+// ฟังก์ชันสร้าง AI Instance โดยดึง Key จาก Environment
 const getAI = () => {
   const apiKey = process.env.API_KEY;
-  // ตรวจสอบกรณี Key ไม่มี หรือเป็นค่า undefined (string) ที่บางครั้งระบบส่งมา
   if (!apiKey || apiKey === "undefined" || apiKey.length < 5) {
     throw new Error("MISSING_KEY");
   }
@@ -19,7 +18,7 @@ export const generatePosterSlogan = async (productInfo: string): Promise<string[
       model: 'gemini-3-flash-preview',
       contents: [{
         parts: [{
-          text: `ทำหน้าที่เป็นก๊อปปี้ไรเตอร์มืออาชีพ ช่วยคิดคำโฆษณาสั้นๆ (ไม่เกิน 10 คำ) สำหรับสินค้า: "${productInfo}" จำนวน 5 ข้อความ ให้น่าสนใจและเหมาะกับโปสเตอร์ขายของ ตอบกลับเป็นรูปแบบ JSON array ของ string เท่านั้น`
+          text: `คุณคือผู้เชี่ยวชาญด้านการตลาด ช่วยคิดคำโปรโมทสินค้าสั้นๆ 5 แบบ สำหรับ: "${productInfo}" ให้น่าสนใจและสะดุดตา ตอบกลับเป็น JSON Array ของ String เท่านั้น (ภาษาไทย)`
         }]
       }],
       config: {
@@ -30,88 +29,72 @@ export const generatePosterSlogan = async (productInfo: string): Promise<string[
         }
       }
     });
-    const text = response.text;
-    return text ? JSON.parse(text.trim()) : [];
+    return JSON.parse(response.text || "[]");
   } catch (e: any) {
-    if (e.message === "MISSING_KEY") throw e;
     console.error("Slogan Error:", e);
-    return [];
+    return ["สินค้าคุณภาพดี", "โปรโมชั่นพิเศษวันนี้", "หอม อร่อย ต้องลอง", "ของดีเมืองน่าน", "ราคาคุ้มค่า"];
   }
 };
 
 export const generatePosterImage = async (config: GenerationConfig): Promise<string> => {
+  const ai = getAI();
+  
+  // แปลและปรับจูน Prompt ให้สวยขึ้น (โหมดฟรี)
+  let finalPrompt = config.prompt;
   try {
-    const ai = getAI();
-    
-    // พยายามขยาย Prompt เป็นภาษาอังกฤษเพื่อให้ AI เจนภาพได้สวยขึ้น
-    let enhancedPrompt = config.prompt;
-    try {
-      const transRes = await ai.models.generateContent({
-        model: 'gemini-3-flash-preview',
-        contents: [{
-          parts: [{
-            text: `Optimize this product description for professional photography AI image generation: "${config.prompt}". Focus on lighting, high-end materials, and studio setup. Style: ${config.style}.`
-          }]
-        }],
-      });
-      enhancedPrompt = transRes.text || config.prompt;
-    } catch (e) {}
-
-    const contentsParts: any[] = [];
-    if (config.baseImage) {
-      // ทำความสะอาด base64 string
-      const base64Data = config.baseImage.includes(',') ? config.baseImage.split(',')[1] : config.baseImage;
-      contentsParts.push({ inlineData: { data: base64Data, mimeType: 'image/png' } });
-    }
-
-    contentsParts.push({ 
-      text: `Professional product photography, ${enhancedPrompt}, ${config.style}, studio background, commercial lighting, 8k resolution, cinematic look, depth of field.` 
+    const trans = await ai.models.generateContent({
+      model: 'gemini-3-flash-preview',
+      contents: [{ parts: [{ text: `Convert to professional English image generation prompt: "${config.prompt}". Style: ${config.style}. High quality, studio lighting.` }] }]
     });
+    finalPrompt = trans.text || config.prompt;
+  } catch (e) {}
 
+  const parts: any[] = [];
+  if (config.baseImage) {
+    const base64Data = config.baseImage.split(',')[1] || config.baseImage;
+    parts.push({
+      inlineData: {
+        data: base64Data,
+        mimeType: 'image/png'
+      }
+    });
+  }
+  
+  parts.push({ 
+    text: `Professional product poster, ${finalPrompt}, background style ${config.style}, cinematic lighting, masterpiece, 8k.` 
+  });
+
+  try {
     const response = await ai.models.generateContent({
       model: 'gemini-2.5-flash-image',
-      contents: [{ parts: contentsParts }],
-      config: { 
-        imageConfig: { 
-          aspectRatio: config.aspectRatio as any 
-        } 
+      contents: { parts }, // ใช้โครงสร้าง contents: { parts } ตามคำแนะนำ SDK
+      config: {
+        imageConfig: {
+          aspectRatio: config.aspectRatio as any
+        }
       }
     });
 
-    // ค้นหาภาพในผลลัพธ์
-    const part = response.candidates?.[0]?.content?.parts?.find(p => p.inlineData?.data);
-    if (part?.inlineData?.data) {
-      return `data:${part.inlineData.mimeType || 'image/png'};base64,${part.inlineData.data}`;
+    // ตรวจสอบข้อมูลภาพใน Response
+    const imagePart = response.candidates?.[0]?.content?.parts?.find(p => p.inlineData);
+    if (imagePart?.inlineData?.data) {
+      return `data:image/png;base64,${imagePart.inlineData.data}`;
     }
-    throw new Error("API_RETURNED_NO_IMAGE");
+    throw new Error("AI ไม่คืนค่ารูปภาพกลับมา");
   } catch (error: any) {
-    if (error.message === "MISSING_KEY") throw error;
-    if (error?.message?.includes("Requested entity was not found")) throw new Error("KEY_INVALID");
+    if (error?.message?.includes("429")) throw new Error("โควตาฟรีหมดชั่วคราว (รอ 1 นาที)");
     throw error;
   }
 };
 
 export const hasApiKey = async (): Promise<boolean> => {
-  const win = window as any;
-  // ตรวจสอบทั้งจาก window.aistudio และ process.env
-  if (win.aistudio?.hasSelectedApiKey) {
-    try {
-      if (await win.aistudio.hasSelectedApiKey()) return true;
-    } catch (e) {}
-  }
   const key = process.env.API_KEY;
   return !!(key && key !== "undefined" && key.length > 5);
 };
 
-export const openKeySelector = async (): Promise<boolean> => {
+export const openKeySelector = async (): Promise<void> => {
   const win = window as any;
   if (win.aistudio?.openSelectKey) {
-    try {
-      await win.aistudio.openSelectKey();
-      return true;
-    } catch (e) {
-      console.error("Open key dialog error:", e);
-    }
+    await win.aistudio.openSelectKey();
   }
-  return false;
 };
