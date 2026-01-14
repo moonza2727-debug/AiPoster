@@ -15,11 +15,14 @@ import {
   Rocket,
   ShieldCheck,
   Key,
-  ChevronRight
+  ExternalLink,
+  CheckCircle2,
+  Clock,
+  Info
 } from 'lucide-react';
 import { AspectRatio, GeneratedPoster } from './types';
 import { STYLE_PRESETS, ASPECT_RATIOS } from './constants';
-import { generatePosterImage, openKeySelector, generatePosterSlogan } from './services/gemini';
+import { generatePosterImage, openKeySelector } from './services/gemini';
 
 interface Logo {
   id: string;
@@ -34,7 +37,9 @@ const App: React.FC = () => {
   const [highQuality, setHighQuality] = useState(false);
   const [isGenerating, setIsGenerating] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [cooldown, setCooldown] = useState(0);
   const [isAiStudio, setIsAiStudio] = useState(false);
+  const [hasPrivateKey, setHasPrivateKey] = useState(false);
   const [productImage, setProductImage] = useState<string | null>(null);
   const [logos, setLogos] = useState<Logo[]>([]);
   const [currentPoster, setCurrentPoster] = useState<GeneratedPoster | null>(null);
@@ -42,12 +47,28 @@ const App: React.FC = () => {
   const canvasRef = useRef<HTMLCanvasElement>(null);
 
   useEffect(() => {
-    if ((window as any).aistudio) {
-      setIsAiStudio(true);
-    }
+    const checkKeyStatus = async () => {
+      const win = window as any;
+      if (win.aistudio) {
+        setIsAiStudio(true);
+        const hasKey = await win.aistudio.hasSelectedApiKey?.();
+        setHasPrivateKey(!!hasKey);
+      }
+    };
+    checkKeyStatus();
+    const interval = setInterval(checkKeyStatus, 3000);
+    return () => clearInterval(interval);
   }, []);
 
+  useEffect(() => {
+    if (cooldown > 0) {
+      const timer = setTimeout(() => setCooldown(cooldown - 1), 1000);
+      return () => clearTimeout(timer);
+    }
+  }, [cooldown]);
+
   const handleGenerate = async () => {
+    if (cooldown > 0) return;
     setError(null);
     if (!prompt.trim() && !productImage) {
       setError("กรุณากรอกชื่อสินค้าหรืออัปโหลดรูปภาพครับ");
@@ -74,10 +95,13 @@ const App: React.FC = () => {
         aspectRatio,
         timestamp: Date.now()
       });
+      setError(null);
     } catch (err: any) {
       const msg = err.message || "";
-      if (msg.includes("429") || msg.includes("RESOURCE_EXHAUSTED")) {
+      if (msg.includes("429") || msg.includes("RESOURCE_EXHAUSTED") || msg.includes("Quota")) {
         setError("QUOTA_ERROR");
+        // ถ้าเป็นโหมด Pro (High Quality) ให้รอ 60 วิ, ถ้าโหมดปกติรอ 30 วิ
+        setCooldown(highQuality ? 60 : 30);
       } else {
         setError(msg || "เกิดข้อผิดพลาดในการเชื่อมต่อ");
       }
@@ -129,16 +153,11 @@ const App: React.FC = () => {
         </div>
         
         <div className="flex items-center gap-4">
-          <div className={`flex items-center gap-3 px-4 py-2 rounded-full border border-white/10 transition-all ${highQuality ? 'bg-amber-500/10 border-amber-500/30' : 'bg-white/5'}`}>
-            <span className={`text-[10px] font-black uppercase tracking-widest ${highQuality ? 'text-amber-500' : 'text-slate-500'}`}>
-              โหมดคุณภาพสูง {highQuality ? '(ON)' : '(OFF)'}
+          <div className={`hidden md:flex items-center gap-2 px-3 py-1.5 rounded-full border ${hasPrivateKey ? 'bg-green-500/10 border-green-500/30 text-green-400' : 'bg-white/5 border-white/10 text-slate-500'}`}>
+            {hasPrivateKey ? <CheckCircle2 className="w-3 h-3" /> : <div className="w-2 h-2 rounded-full bg-slate-700" />}
+            <span className="text-[9px] font-black uppercase tracking-widest">
+              {hasPrivateKey ? 'Private AI Studio Key' : 'Shared Global Key'}
             </span>
-            <button 
-              onClick={() => setHighQuality(!highQuality)}
-              className={`w-10 h-5 rounded-full relative transition-all ${highQuality ? 'bg-amber-500' : 'bg-slate-700'}`}
-            >
-              <div className={`absolute top-1 w-3 h-3 bg-white rounded-full transition-all ${highQuality ? 'right-1' : 'left-1'}`} />
-            </button>
           </div>
           {isAiStudio && (
             <button onClick={openKeySelector} className="p-2 bg-white/5 hover:bg-white/10 rounded-full border border-white/10 transition-colors">
@@ -149,11 +168,10 @@ const App: React.FC = () => {
       </nav>
 
       <main className="flex-1 container mx-auto p-4 lg:p-8 grid lg:grid-cols-12 gap-8">
-        {/* Sidebar */}
         <div className="lg:col-span-4 space-y-4">
           <div className="glass rounded-[40px] p-6 space-y-6 border border-white/10 shadow-2xl h-[calc(100vh-140px)] overflow-y-auto custom-scrollbar">
             
-            {/* LOGO Section - Moved to top priority */}
+            {/* 01. Logo Section */}
             <div className="bg-amber-500/10 p-5 rounded-[30px] border border-amber-500/20 space-y-4 shadow-inner">
               <label className="text-[11px] font-black text-amber-500 uppercase tracking-[0.2em] flex items-center gap-2">
                 <ShieldCheck className="w-4 h-4" /> 01. โลโก้แบรนด์
@@ -179,12 +197,9 @@ const App: React.FC = () => {
                   <Plus className="w-5 h-5 text-amber-500 group-hover:scale-110 transition-transform" />
                 </label>
               </div>
-              <p className="text-[9px] text-amber-500/70 font-bold leading-relaxed">
-                * แนะนำไฟล์ PNG พื้นหลังใส (ระบบจะเอาไปแปะให้ที่มุมขวาบนของภาพครับ)
-              </p>
             </div>
 
-            {/* Product Image */}
+            {/* 02. Product Image */}
             <div className="bg-white/5 p-5 rounded-[30px] border border-white/5 space-y-3">
               <label className="text-[11px] font-black text-amber-500 uppercase tracking-[0.2em] flex items-center gap-2">
                 <Layers className="w-4 h-4" /> 02. รูปภาพสินค้า
@@ -203,13 +218,13 @@ const App: React.FC = () => {
                 ) : (
                   <div className="h-full flex flex-col items-center justify-center text-slate-500 gap-2 opacity-40 group-hover:opacity-100 transition-opacity">
                     <ImageIcon className="w-8 h-8" />
-                    <span className="text-[10px] font-black uppercase tracking-widest">อัปโหลดภาพสินค้า</span>
+                    <span className="text-[10px] font-black uppercase tracking-widest text-center">อัปโหลดภาพสินค้า</span>
                   </div>
                 )}
               </label>
             </div>
 
-            {/* Input Details */}
+            {/* 03. Poster Text */}
             <div className="bg-white/5 p-5 rounded-[30px] border border-white/5 space-y-4">
               <label className="text-[11px] font-black text-amber-500 uppercase tracking-[0.2em] flex items-center gap-2">
                 <TypeIcon className="w-4 h-4" /> 03. ข้อความในโปสเตอร์
@@ -229,10 +244,10 @@ const App: React.FC = () => {
               />
             </div>
 
-            {/* Style & Size */}
+            {/* 04. Config */}
             <div className="bg-white/5 p-5 rounded-[30px] border border-white/5 space-y-4">
               <label className="text-[11px] font-black text-amber-500 uppercase tracking-[0.2em] flex items-center gap-2">
-                <Maximize2 className="w-4 h-4" /> 04. สไตล์และขนาด
+                <Maximize2 className="w-4 h-4" /> 04. สไตล์และโหมด
               </label>
               <div className="grid grid-cols-1 gap-3">
                 <select value={styleIndex} onChange={e => setStyleIndex(Number(e.target.value))} className="w-full bg-black/80 border border-white/10 rounded-2xl px-4 py-3 text-[11px] outline-none hover:bg-black transition-colors">
@@ -241,26 +256,45 @@ const App: React.FC = () => {
                 <select value={aspectRatio} onChange={e => setAspectRatio(e.target.value as any)} className="w-full bg-black/80 border border-white/10 rounded-2xl px-4 py-3 text-[11px] outline-none hover:bg-black transition-colors">
                   {ASPECT_RATIOS.map(r => <option key={r.id} value={r.id}>{r.label}</option>)}
                 </select>
+                <div className={`p-4 rounded-2xl border transition-all ${highQuality ? 'bg-amber-500/10 border-amber-500/40' : 'bg-black/40 border-white/5'}`}>
+                  <div className="flex items-center justify-between mb-2">
+                    <span className={`text-[10px] font-black uppercase tracking-widest ${highQuality ? 'text-amber-500' : 'text-slate-400'}`}>โหมดคุณภาพสูงสุด (Pro)</span>
+                    <button 
+                      onClick={() => setHighQuality(!highQuality)}
+                      className={`w-10 h-5 rounded-full relative transition-all ${highQuality ? 'bg-amber-500' : 'bg-slate-700'}`}
+                    >
+                      <div className={`absolute top-1 w-3 h-3 bg-white rounded-full transition-all ${highQuality ? 'right-1' : 'left-1'}`} />
+                    </button>
+                  </div>
+                  {highQuality && (
+                    <div className="flex items-start gap-2 text-[9px] text-amber-500/80 leading-tight">
+                      <Info className="w-3 h-3 shrink-0" />
+                      <span>คำเตือน: โหมด Pro จำกัดการสร้างเพียง 2 ภาพ/นาที และโควตารายวันน้อยกว่าปกติ</span>
+                    </div>
+                  )}
+                </div>
               </div>
             </div>
 
-            {/* Error Message with Quota Recovery Button */}
+            {/* Quota Recovery UI */}
             {error === "QUOTA_ERROR" ? (
-              <div className="bg-amber-500/10 border border-amber-500/30 p-6 rounded-[30px] space-y-4 shadow-xl">
+              <div className="bg-amber-500/10 border border-amber-500/30 p-6 rounded-[30px] space-y-4 shadow-xl animate-in fade-in slide-in-from-bottom-2">
                 <div className="flex items-start gap-3 text-amber-500">
-                  <AlertTriangle className="w-6 h-6 shrink-0 mt-1" />
+                  <Clock className="w-6 h-6 shrink-0 mt-1 animate-pulse" />
                   <div className="space-y-1">
-                    <p className="text-xs font-black uppercase">โควตาส่วนกลางเต็ม!</p>
-                    <p className="text-[10px] leading-relaxed font-medium">ระบบส่วนกลางมีผู้ใช้จำนวนมาก แนะนำให้ใช้ **API Key ส่วนตัว** เพื่อใช้งานได้ทันที (ฟรีไม่มีค่าใช้จ่าย)</p>
+                    <p className="text-xs font-black uppercase tracking-wider">โควตาเต็มชั่วคราว! ({cooldown}วิ)</p>
+                    <p className="text-[10px] leading-relaxed">
+                      {highQuality 
+                        ? "คุณกำลังใช้โหมดคุณภาพสูงสุด (Pro) ซึ่งจำกัดเพียง 2 ภาพต่อนาทีครับ แนะนำให้ปิดโหมด PRO เพื่อใช้งานได้ต่อเนื่องขึ้น"
+                        : "ถึงจะใช้คนเดียว แต่การคุยแชทและการสร้างภาพใช้โควตาร่วมกันครับ กรุณารอสักครู่แล้วกดใหม่นะครับ"}
+                    </p>
                   </div>
                 </div>
-                <button 
-                  onClick={openKeySelector} 
-                  className="w-full py-3 bg-amber-500 text-black rounded-2xl text-[11px] font-black uppercase tracking-widest flex items-center justify-center gap-2 hover:bg-amber-400 transition-all shadow-lg shadow-amber-500/20"
-                >
-                  <Key className="w-4 h-4" /> เลือก API Key ของคุณ
-                </button>
-                <p className="text-[9px] text-slate-500 text-center italic">หลังจากเลือก Key แล้ว กดปุ่มเจนใหม่ได้เลยครับ!</p>
+                {highQuality && (
+                  <button onClick={() => {setHighQuality(false); setError(null); setCooldown(0);}} className="w-full py-3 bg-white/5 border border-white/10 rounded-xl text-[10px] font-bold text-slate-300 hover:bg-white/10 transition-all">
+                    ปิดโหมด Pro เพื่อใช้ต่อได้ทันที
+                  </button>
+                )}
               </div>
             ) : error && (
               <div className="bg-red-500/10 border border-red-500/20 p-5 rounded-[30px] flex items-start gap-3 text-red-400">
@@ -271,11 +305,11 @@ const App: React.FC = () => {
 
             <button 
               onClick={handleGenerate} 
-              disabled={isGenerating} 
-              className="w-full py-6 rounded-[35px] font-black text-xs uppercase tracking-[0.2em] flex items-center justify-center gap-3 bg-amber-500 text-black hover:bg-amber-400 hover:scale-[1.02] active:scale-95 transition-all shadow-2xl shadow-amber-500/20 disabled:opacity-50 disabled:scale-100"
+              disabled={isGenerating || cooldown > 0} 
+              className="w-full py-6 rounded-[35px] font-black text-xs uppercase tracking-[0.2em] flex items-center justify-center gap-3 bg-amber-500 text-black hover:bg-amber-400 hover:scale-[1.02] active:scale-95 transition-all shadow-2xl shadow-amber-500/20 disabled:opacity-50 disabled:scale-100 disabled:grayscale"
             >
-              {isGenerating ? <RefreshCw className="w-5 h-5 animate-spin" /> : <Rocket className="w-5 h-5" />}
-              {isGenerating ? 'กำลังรังสรรค์ภาพ...' : 'เริ่มสร้างโปสเตอร์'}
+              {isGenerating ? <RefreshCw className="w-5 h-5 animate-spin" /> : cooldown > 0 ? <Clock className="w-5 h-5" /> : <Rocket className="w-5 h-5" />}
+              {isGenerating ? 'กำลังสร้างภาพ...' : cooldown > 0 ? `รออีก ${cooldown} วินาที` : 'เริ่มสร้างโปสเตอร์'}
             </button>
           </div>
         </div>
@@ -284,6 +318,11 @@ const App: React.FC = () => {
         <div className="lg:col-span-8 flex flex-col items-center justify-center bg-white/[0.02] border border-white/5 rounded-[60px] p-8 min-h-[500px] relative overflow-hidden shadow-inner group">
            <div className="absolute inset-0 bg-gradient-to-tr from-amber-500/5 to-transparent opacity-20"></div>
            
+           <div className="absolute top-8 left-8 flex items-center gap-3 opacity-40">
+              <div className={`w-2 h-2 rounded-full ${highQuality ? 'bg-amber-500' : 'bg-blue-500'}`} />
+              <span className="text-[9px] font-black uppercase tracking-[0.2em]">Model: {highQuality ? 'Gemini 3 Pro' : 'Gemini 2.5 Flash'}</span>
+           </div>
+
            {isGenerating ? (
              <div className="text-center space-y-8 relative z-10">
                 <div className="w-24 h-24 relative mx-auto">
@@ -293,15 +332,13 @@ const App: React.FC = () => {
                 </div>
                 <div className="space-y-2">
                   <p className="text-amber-500 font-black animate-pulse text-xs tracking-[0.4em] uppercase">AI is Creating Your Art</p>
-                  <p className="text-[10px] text-slate-600 font-medium italic">"กำลังประมวลผลแสงและเงาให้สมจริงที่สุด..."</p>
+                  <p className="text-[10px] text-slate-600 font-medium italic">"กำลังประมวลผลด้วยพลังของ {highQuality ? 'Pro' : 'Flash'} Model..."</p>
                 </div>
              </div>
            ) : currentPoster ? (
              <div className="w-full h-full flex flex-col items-center gap-10 animate-in zoom-in duration-500 relative z-10">
                <div className="relative shadow-[0_50px_100px_-20px_rgba(0,0,0,0.6)] rounded-[40px] overflow-hidden border border-white/10 bg-black">
                  <img src={currentPoster.url} className="max-h-[60vh] w-auto block" alt="Generated Poster" />
-                 
-                 {/* Visual Overlay Previews */}
                  <div className="absolute top-6 right-6 flex gap-3">
                    {logos.map(logo => (
                      <img key={logo.id} src={logo.url} className="h-12 w-auto object-contain drop-shadow-2xl" />
@@ -311,10 +348,10 @@ const App: React.FC = () => {
 
                <div className="flex flex-wrap justify-center gap-4">
                  <button onClick={downloadImage} className="bg-white text-black px-12 py-5 rounded-full font-black text-[11px] uppercase tracking-[0.2em] flex items-center gap-3 hover:scale-110 active:scale-95 transition-all shadow-2xl">
-                   <Download className="w-5 h-5" /> ดาวน์โหลดภาพจริง (Full HD)
+                   <Download className="w-5 h-5" /> ดาวน์โหลดภาพจริง
                  </button>
                  <button onClick={() => setCurrentPoster(null)} className="bg-white/5 text-white/40 px-8 py-5 rounded-full font-black text-[11px] uppercase tracking-[0.2em] hover:bg-red-500/20 hover:text-red-400 transition-all">
-                   ล้างผลงาน
+                   ล้างหน้าจอ
                  </button>
                </div>
              </div>
