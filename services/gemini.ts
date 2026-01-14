@@ -103,7 +103,9 @@ export const generatePosterImage = async (config: GenerationConfig): Promise<str
 
     // ค้นหา Part ที่เป็นรูปภาพจาก Candidates
     const candidate = response.candidates?.[0];
-    if (!candidate) throw new Error("NO_RESPONSE_FROM_AI");
+    if (!candidate || !candidate.content || !candidate.content.parts) {
+      throw new Error("API_RETURNED_NO_IMAGE");
+    }
 
     for (const part of candidate.content.parts) {
       if (part.inlineData?.data) {
