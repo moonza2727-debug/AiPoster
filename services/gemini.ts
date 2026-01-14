@@ -3,7 +3,7 @@ import { GenerationConfig } from "../types";
 
 export const generatePosterSlogan = async (productInfo: string): Promise<string[]> => {
   try {
-    const ai = new GoogleGenAI({ apiKey: process.env.API_KEY });
+    const ai = new GoogleGenAI({ apiKey: process.env.API_KEY || "" });
     const response = await ai.models.generateContent({
       model: 'gemini-3-flash-preview',
       contents: [{
@@ -29,19 +29,17 @@ export const generatePosterSlogan = async (productInfo: string): Promise<string[
 };
 
 export const generatePosterImage = async (config: GenerationConfig): Promise<string> => {
-  // บังคับเลือกโมเดลให้ชัดเจนที่สุด
   const modelName = config.highQuality ? 'gemini-3-pro-image-preview' : 'gemini-2.5-flash-image';
   
-  // สร้าง instance ใหม่ทุกครั้งก่อนเรียกใช้ เพื่อป้องกัน Key สตาร์ทไม่ติด
-  const ai = new GoogleGenAI({ apiKey: process.env.API_KEY });
+  // ใช้ API Key จาก environment ซึ่งจะถูกอัปเดตอัตโนมัติหากผู้ใช้เลือก Key ใหม่ผ่าน Dialog
+  const ai = new GoogleGenAI({ apiKey: process.env.API_KEY || "" });
   
   const parts: any[] = [];
-  const stylePrompt = config.style || "Professional commercial photography";
-  const finalPrompt = `Professional product poster for "${config.prompt}". 
-    Target context: "${config.posterText || ''}". 
+  const stylePrompt = config.style || "Commercial photography";
+  const finalPrompt = `Professional product poster: "${config.prompt}". 
+    Headline: "${config.posterText || ''}". 
     Style: ${stylePrompt}. 
-    High quality, studio lighting, 8k resolution, advertisement grade.
-    ${config.removeBackground ? 'Isolated product on a clean artistic background.' : ''}`;
+    Clean background, studio lighting.`;
 
   if (config.baseImage) {
     const base64Data = config.baseImage.includes(',') ? config.baseImage.split(',')[1] : config.baseImage;
@@ -76,7 +74,7 @@ export const generatePosterImage = async (config: GenerationConfig): Promise<str
       }
     }
     
-    throw new Error("AI ไม่ได้ส่งรูปภาพกลับมา กรุณาลองใหม่");
+    throw new Error("AI ไม่สามารถสร้างภาพได้ในขณะนี้");
   } catch (error: any) {
     console.error("Gemini Error:", error);
     throw error;
