@@ -2,14 +2,12 @@
 import { GoogleGenAI, Type } from "@google/genai";
 import { GenerationConfig } from "../types";
 
+// Fix: Initialize GoogleGenAI with process.env.API_KEY directly as required by guidelines
 const getAIClient = () => {
-  const apiKey = process.env.API_KEY;
-  
-  if (!apiKey || apiKey === "") {
-    console.error("❌ ไม่พบ API_KEY: โปรดตรวจสอบว่าคุณได้ตั้งค่าใน Vercel และกด Redeploy แล้ว");
+  if (!process.env.API_KEY || process.env.API_KEY === "") {
+    throw new Error("MISSING_API_KEY");
   }
-  
-  return new GoogleGenAI({ apiKey: apiKey as string });
+  return new GoogleGenAI({ apiKey: process.env.API_KEY });
 };
 
 export const generatePosterSlogan = async (productInfo: string): Promise<string[]> => {
@@ -30,9 +28,11 @@ export const generatePosterSlogan = async (productInfo: string): Promise<string[
         }
       }
     });
+    // Fix: Access .text property directly (not as a method)
     return JSON.parse(response.text || "[]");
   } catch (e: any) {
     console.error("Slogan Error:", e);
+    if (e.message === "MISSING_API_KEY") throw e;
     return ["สินค้าคุณภาพดี", "โปรโมชั่นพิเศษ", "ของเด็ดเมืองน่าน", "พรีเมียมเกรด A", "คุ้มค่าราคาประหยัด"];
   }
 };
@@ -71,13 +71,15 @@ export const generatePosterImage = async (config: GenerationConfig): Promise<str
       }
     });
 
+    // Fix: Iterate through parts to find the image part, as it might not be the first one
     for (const part of response.candidates?.[0]?.content?.parts || []) {
       if (part.inlineData?.data) {
         return `data:image/png;base64,${part.inlineData.data}`;
       }
     }
-    throw new Error("AI_NO_IMAGE");
+    throw new Error("AI_RETURNED_NO_IMAGE");
   } catch (error: any) {
+    console.error("Gemini API Error:", error);
     throw error;
   }
 };
