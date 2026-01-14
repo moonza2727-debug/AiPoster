@@ -2,10 +2,11 @@
 import { GoogleGenAI, Type } from "@google/genai";
 import { GenerationConfig } from "../types";
 
+// ฟังก์ชันสร้าง AI instance ใหม่ทุกครั้งที่เรียกใช้ เพื่อให้ได้ Key ล่าสุดจากการกดเลือก
 const getAI = () => {
   const apiKey = process.env.API_KEY;
-  if (!apiKey || apiKey === "undefined") {
-    throw new Error("MISSING_KEY");
+  if (!apiKey || apiKey === "undefined" || apiKey.length < 10) {
+    throw new Error("กรุณากดปุ่ม 'เชื่อมต่อระบบ' ที่มุมขวาบนก่อนนะครับ");
   }
   return new GoogleGenAI({ apiKey });
 };
@@ -31,24 +32,26 @@ export const generatePosterSlogan = async (productInfo: string): Promise<string[
     return JSON.parse(response.text || "[]");
   } catch (e: any) {
     console.error("Slogan Error:", e);
-    return ["สินค้าคุณภาพดี", "โปรโมชั่นพิเศษ", "ของดีเมืองน่าน", "ราคาคุ้มค่า"];
+    return ["สินค้าพรีเมียม", "โปรโมชั่นพิเศษ", "ของดีจากน่าน", "คุณภาพเหนือราคา"];
   }
 };
 
 export const generatePosterImage = async (config: GenerationConfig): Promise<string> => {
   const ai = getAI();
   
+  // แปลและปรับปรุงคำสั่งภาษาไทยเป็นอังกฤษเพื่อให้ AI เข้าใจดีขึ้น
   let enhancedPrompt = config.prompt;
   try {
     const trans = await ai.models.generateContent({
       model: 'gemini-3-flash-preview',
-      contents: [{ parts: [{ text: `Create a professional product photography prompt: "${config.prompt}". Style: ${config.style}.` }] }]
+      contents: [{ parts: [{ text: `Translate and enhance to a professional product photo prompt: "${config.prompt}". Style should be: ${config.style}.` }] }]
     });
     enhancedPrompt = trans.text || config.prompt;
   } catch (e) {}
 
   const parts: any[] = [];
   
+  // แนบรูปสินค้าถ้ามีการอัปโหลด
   if (config.baseImage) {
     const base64Data = config.baseImage.includes(',') ? config.baseImage.split(',')[1] : config.baseImage;
     parts.push({
@@ -59,13 +62,13 @@ export const generatePosterImage = async (config: GenerationConfig): Promise<str
     });
   }
   
-  // คำสั่งลบพื้นหลังแบบ AI (Inpainting/Replacement)
+  // คำสั่งลบพื้นหลัง (Image Inpainting Instruction)
   const bgInstruction = config.removeBackground 
-    ? "IMPORTANT: Completely remove the original background from the uploaded image and replace it with the new style. Isolate the product perfectly." 
-    : "Integrate the product naturally into the scene.";
+    ? "ACTION: DETACH the product from its original background. PLACE the isolated product into a NEW premium environment." 
+    : "Enhance the existing photo naturally.";
 
   parts.push({ 
-    text: `${bgInstruction} Commercial product poster of ${enhancedPrompt}. Background style: ${config.style}. Professional studio lighting, 8k, cinematic masterpiece.` 
+    text: `${bgInstruction} High-end commercial product poster. Product: ${enhancedPrompt}. Background Style: ${config.style}. Soft studio lighting, 8k resolution, cinematic look, advertisement quality.` 
   });
 
   try {
@@ -74,7 +77,7 @@ export const generatePosterImage = async (config: GenerationConfig): Promise<str
       contents: { parts },
       config: {
         imageConfig: {
-          aspectRatio: config.aspectRatio as any // '1:1', '3:4', '16:9' etc.
+          aspectRatio: config.aspectRatio as any // '1:1', '3:4', '16:9' ฯลฯ
         }
       }
     });
@@ -84,19 +87,27 @@ export const generatePosterImage = async (config: GenerationConfig): Promise<str
         return `data:image/png;base64,${part.inlineData.data}`;
       }
     }
-    throw new Error("AI ไม่สามารถสร้างรูปภาพได้");
+    throw new Error("AI ไม่สามารถสร้างภาพได้ในขณะนี้");
   } catch (error: any) {
-    if (error?.message?.includes("429")) throw new Error("โควตาเต็ม (รอ 1 นาที)");
+    if (error?.message?.includes("429")) throw new Error("โควตาฟรีชั่วคราวเต็มแล้ว (รอ 1 นาทีครับ)");
     throw error;
   }
 };
 
 export const hasApiKey = async (): Promise<boolean> => {
+  const win = window as any;
+  if (win.aistudio?.hasSelectedApiKey) {
+    return await win.aistudio.hasSelectedApiKey();
+  }
   const key = process.env.API_KEY;
-  return !!(key && key !== "undefined" && key.length > 5);
+  return !!(key && key !== "undefined" && key.length > 10);
 };
 
 export const openKeySelector = async (): Promise<void> => {
   const win = window as any;
-  if (win.aistudio?.openSelectKey) await win.aistudio.openSelectKey();
+  if (win.aistudio?.openSelectKey) {
+    await win.aistudio.openSelectKey();
+    // หลังจากกดเลือกแล้ว ให้บังคับหน้าจออัปเดตสถานะ
+    window.location.reload(); 
+  }
 };
