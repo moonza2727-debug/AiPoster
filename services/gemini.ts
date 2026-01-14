@@ -3,7 +3,6 @@ import { GoogleGenAI, Type } from "@google/genai";
 import { GenerationConfig } from "../types";
 
 export const generatePosterSlogan = async (productInfo: string): Promise<string[]> => {
-  // สร้าง instance ใหม่ทุกครั้งเพื่อใช้ Key ล่าสุดจาก process.env.API_KEY
   const ai = new GoogleGenAI({ apiKey: process.env.API_KEY });
   
   try {
@@ -22,17 +21,28 @@ export const generatePosterSlogan = async (productInfo: string): Promise<string[
     });
     return JSON.parse(response.text || '[]');
   } catch (e: any) {
-    if (e?.message?.includes("429")) {
-      throw new Error("QUOTA_EXCEEDED");
-    }
+    const msg = e?.message || "";
+    if (msg.includes("429")) throw new Error("QUOTA_EXCEEDED");
     return [];
   }
 };
 
 export const generatePosterImage = async (config: GenerationConfig): Promise<string> => {
   const ai = new GoogleGenAI({ apiKey: process.env.API_KEY });
-  const modelName = 'gemini-2.5-flash-image';
   
+  // 1. แปลรายละเอียดสินค้าจากไทยเป็นอังกฤษเพื่อความแม่นยำของโมเดลรูปภาพ
+  let translatedPrompt = config.prompt;
+  try {
+    const translationResult = await ai.models.generateContent({
+      model: 'gemini-3-flash-preview',
+      contents: `Translate and enhance this Thai product description into a highly descriptive English visual prompt for a professional studio product shot: "${config.prompt}". Focus on lighting, textures, and premium atmosphere. Return only the English prompt.`,
+    });
+    translatedPrompt = translationResult.text || config.prompt;
+  } catch (e) {
+    console.warn("Translation failed, using original prompt");
+  }
+
+  const modelName = 'gemini-2.5-flash-image';
   let parts: any[] = [];
   
   if (config.baseImage) {
@@ -45,15 +55,17 @@ export const generatePosterImage = async (config: GenerationConfig): Promise<str
     });
   }
 
+  // ปรับปรุงคำสั่งเรื่องการลบพื้นหลังให้เข้มงวดขึ้น
+  let bgInstruction = config.removeBackground 
+    ? "MANDATORY: COMPLETELY REMOVE the original background of the provided product image. EXTRACT ONLY the product subject and place it realistically into the new generated environment. The new background must be entirely different as per the style."
+    : "Keep the product and its immediate surroundings from the original image and blend them naturally into the new background style.";
+
   let instruction = `You are a world-class advertising creative director.
   TASK: Design a high-impact, professional marketing poster.
-  STYLE: ${config.style}
-  ENVIRONMENT: ${config.prompt}
-  STRIKING TYPOGRAPHY: The text "${config.posterText || ''}" must be rendered in BOLD, PREMIUM 3D typography integrated into the scene.`;
-
-  if (config.baseImage) {
-    instruction += `\nPRODUCT INTEGRATION: ${config.removeBackground ? 'Extract product and place in studio.' : 'Blend naturally.'}`;
-  }
+  STYLE DESCRIPTION: ${config.style}
+  ENVIRONMENT & SUBJECT: ${translatedPrompt}
+  BACKGROUND HANDLING: ${bgInstruction}
+  TYPOGRAPHY: Integrate the text "${config.posterText || ''}" into the scene using 3D, premium font style that matches the lighting.`;
 
   parts.push({ text: instruction });
 
@@ -69,9 +81,8 @@ export const generatePosterImage = async (config: GenerationConfig): Promise<str
     });
 
     let imageUrl = '';
-    const candidates = response.candidates;
-    if (candidates && candidates.length > 0 && candidates[0].content && candidates[0].content.parts) {
-      for (const part of candidates[0].content.parts) {
+    if (response.candidates?.[0]?.content?.parts) {
+      for (const part of response.candidates[0].content.parts) {
         if (part.inlineData) {
           imageUrl = `data:${part.inlineData.mimeType};base64,${part.inlineData.data}`;
           break;
@@ -79,14 +90,17 @@ export const generatePosterImage = async (config: GenerationConfig): Promise<str
       }
     }
 
-    if (!imageUrl) throw new Error("EMPTY_RESPONSE");
+    if (!imageUrl) throw new Error("API_RETURNED_NO_IMAGE");
     return imageUrl;
   } catch (error: any) {
-    console.error("Gemini API Error:", error);
-    if (error?.message?.includes("429") || error?.message?.includes("entity was not found")) {
-      throw new Error("QUOTA_EXCEEDED");
-    }
-    throw new Error(error.message || "UNKNOWN_ERROR");
+    const msg = error?.message || "";
+    console.error("Gemini Error:", error);
+    
+    if (msg.includes("429")) throw new Error("QUOTA_EXCEEDED");
+    if (msg.includes("Requested entity was not found")) throw new Error("INVALID_KEY");
+    if (msg.includes("safety")) throw new Error("SAFETY_BLOCK");
+    
+    throw new Error(msg || "UNKNOWN_ERROR");
   }
 };
 
