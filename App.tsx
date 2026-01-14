@@ -1,25 +1,23 @@
 
-import React, { useState, useEffect, useRef } from 'react';
+import React, { useState, useRef } from 'react';
 import { 
   Sparkles, 
   Image as ImageIcon, 
   Download, 
-  History, 
   Settings2, 
   RefreshCw,
   X,
   Plus,
   AlertTriangle,
-  Key,
   Layers,
   Maximize2,
-  CheckCircle2,
   Type as TypeIcon,
-  Tag
+  Tag,
+  Rocket
 } from 'lucide-react';
 import { AspectRatio, GeneratedPoster } from './types';
-import { STYLE_PRESETS, ASPECT_RATIOS, LOADING_MESSAGES } from './constants';
-import { generatePosterImage, openKeySelector, generatePosterSlogan, hasApiKey } from './services/gemini';
+import { STYLE_PRESETS, ASPECT_RATIOS } from './constants';
+import { generatePosterImage, openKeySelector, generatePosterSlogan, checkKeyStatus } from './services/gemini';
 
 interface Logo {
   id: string;
@@ -27,7 +25,6 @@ interface Logo {
 }
 
 const App: React.FC = () => {
-  // --- States ---
   const [prompt, setPrompt] = useState('');
   const [posterText, setPosterText] = useState('');
   const [styleIndex, setStyleIndex] = useState(0);
@@ -38,37 +35,12 @@ const App: React.FC = () => {
   const [aiSlogans, setAiSlogans] = useState<string[]>([]);
   const [error, setError] = useState<string | null>(null);
   
-  // สถานะการเชื่อมต่อ (Default เป็น false จนกว่าจะเช็คเสร็จหรือกดเชื่อมต่อ)
-  const [isKeyReady, setIsKeyReady] = useState(false);
-  
   const [productImage, setProductImage] = useState<string | null>(null);
   const [logos, setLogos] = useState<Logo[]>([]);
   const [history, setHistory] = useState<GeneratedPoster[]>([]);
   const [currentPoster, setCurrentPoster] = useState<GeneratedPoster | null>(null);
   
   const canvasRef = useRef<HTMLCanvasElement>(null);
-
-  // --- Effects ---
-  useEffect(() => {
-    // เช็คแค่ครั้งเดียวตอนโหลดแอป
-    const initCheck = async () => {
-      const ok = await hasApiKey();
-      setIsKeyReady(ok);
-    };
-    initCheck();
-  }, []);
-
-  // --- Handlers ---
-  const handleConnect = async () => {
-    setError(null);
-    try {
-      await openKeySelector();
-      // ตามกฎ: ให้ถือว่าเลือกสำเร็จทันทีเพื่อเลี่ยง race condition
-      setIsKeyReady(true); 
-    } catch (e) {
-      console.error(e);
-    }
-  };
 
   const processImage = (file: File): Promise<string> => {
     return new Promise((resolve) => {
@@ -113,41 +85,56 @@ const App: React.FC = () => {
   };
 
   const handleAiSlogan = async () => {
+    setError(null);
     if (!prompt.trim()) {
-      setError("กรุณาใส่ชื่อหรือรายละเอียดสินค้าก่อน");
+      setError("กรุณาใส่ชื่อสินค้าก่อนเพื่อให้ AI ช่วยคิด");
       return;
     }
     setIsSloganLoading(true);
-    setError(null);
     try {
+      const isOk = await checkKeyStatus();
+      if (!isOk) {
+        await openKeySelector();
+        // ถ้าหลังเปิด Selector แล้วยังไม่มี Key (สำหรับกรณีนอก AI Studio) ให้หยุดทำงาน
+        if (!(await checkKeyStatus())) {
+          throw new Error("KEY_NOT_FOUND");
+        }
+      }
       const suggestions = await generatePosterSlogan(prompt);
       setAiSlogans(suggestions);
-    } catch (e) {
-      setError("AI คิดสโลแกนไม่สำเร็จ แต่คุณยังสร้างภาพได้ปกติครับ");
+    } catch (e: any) {
+      console.error("Slogan fail:", e);
+      if (e.message === "KEY_NOT_FOUND") {
+        setError("ไม่พบ API Key สำหรับการใช้งาน กรุณาตั้งค่าในระบบ Hosting");
+      } else {
+        setError("AI คิดสโลแกนไม่สำเร็จในขณะนี้");
+      }
     } finally {
       setIsSloganLoading(false);
     }
   };
 
   const handleGenerate = async () => {
-    // 1. ถ้า Key ยังไม่พร้อม ให้กดเชื่อมต่อก่อน
-    if (!isKeyReady) {
-      await handleConnect();
-      return;
-    }
-
-    // 2. ตรวจสอบว่ามีข้อมูลพื้นฐานไหม
-    if (!prompt.trim() && !productImage) {
-      setError("กรุณาใส่ชื่อสินค้า หรืออัปโหลดรูปภาพสินค้าก่อนเริ่มเนรมิต");
-      return;
-    }
-
     setError(null);
+
+    if (!prompt.trim() && !productImage) {
+      setError("กรุณาใส่ชื่อสินค้า หรืออัปโหลดรูปภาพสินค้า");
+      return;
+    }
+
     setIsGenerating(true);
 
     try {
+      // ตรวจสอบ Key ก่อนเริ่ม
+      if (!(await checkKeyStatus())) {
+        await openKeySelector();
+        if (!(await checkKeyStatus())) {
+          throw new Error("KEY_NOT_FOUND");
+        }
+      }
+
       const result = await generatePosterImage({
-        prompt: prompt || "Premium Nan product",
+        prompt: prompt || "Premium product",
         style: STYLE_PRESETS[styleIndex].label as any,
         aspectRatio,
         highQuality: true,
@@ -169,13 +156,11 @@ const App: React.FC = () => {
       setHistory(prev => [newPoster, ...prev].slice(0, 10));
     } catch (err: any) {
       console.error("Generate error:", err);
-      // หาก Error เกี่ยวกับ Key ให้รีเซ็ตสถานะเพื่อให้ผู้ใช้เลือกใหม่
       if (err.message === "KEY_INVALID" || err.message === "KEY_NOT_FOUND") {
-        setIsKeyReady(false);
-        setError("API Key ไม่ถูกต้องหรือยังไม่ได้ตั้งค่าการชำระเงิน (Paid Project) กรุณาเชื่อมต่อใหม่อีกครั้ง");
-        await handleConnect();
+        setError("API Key ไม่ถูกต้องหรือยังไม่ได้ตั้งค่า กรุณาตรวจสอบการตั้งค่าบน Hosting (Environment Variables)");
+        await openKeySelector();
       } else {
-        setError(err.message || "ระบบขัดข้องชั่วคราว กรุณาลองใหม่อีกครั้ง");
+        setError(err.message === "AI_NO_IMAGE" ? "AI ไม่สามารถสร้างภาพได้ กรุณาลองเปลี่ยนคำอธิบาย" : "เกิดข้อผิดพลาดทางเทคนิค กรุณาลองใหม่ในภายหลัง");
       }
     } finally {
       setIsGenerating(false);
@@ -197,7 +182,6 @@ const App: React.FC = () => {
     canvas.height = mainImg.height;
     ctx.drawImage(mainImg, 0, 0);
 
-    // วาดโลโก้
     const logoSize = canvas.width * 0.15;
     for (let i = 0; i < logos.length; i++) {
       const logoImg = new Image();
@@ -207,7 +191,6 @@ const App: React.FC = () => {
       ctx.drawImage(logoImg, canvas.width - (logoSize + 40), 40 + (i * (h + 20)), logoSize, h);
     }
 
-    // วาดข้อความ
     if (posterText) {
       ctx.font = `bold ${canvas.width * 0.07}px Prompt`;
       ctx.fillStyle = 'white';
@@ -218,14 +201,13 @@ const App: React.FC = () => {
     }
 
     const link = document.createElement('a');
-    link.download = `nan-poster-${Date.now()}.png`;
+    link.download = `ai-poster-${Date.now()}.png`;
     link.href = canvas.toDataURL('image/png');
     link.click();
   };
 
   return (
     <div className="min-h-screen bg-[#03060b] text-slate-200 flex flex-col font-['Prompt']">
-      {/* Header */}
       <nav className="border-b border-white/5 bg-black/40 backdrop-blur-xl sticky top-0 z-50 px-6 py-4 flex items-center justify-between">
         <div className="flex items-center gap-3">
           <div className="bg-amber-500 p-2 rounded-xl shadow-lg shadow-amber-500/20">
@@ -236,47 +218,40 @@ const App: React.FC = () => {
             <p className="text-[9px] text-amber-500/80 uppercase tracking-widest mt-1">Nan Smart Marketing Engine</p>
           </div>
         </div>
-        
-        <button 
-          onClick={handleConnect}
-          className={`px-5 py-2 rounded-full text-[11px] font-bold flex items-center gap-2 border transition-all ${isKeyReady ? 'border-emerald-500/30 bg-emerald-500/10 text-emerald-400' : 'border-amber-500/50 bg-amber-500 text-black animate-pulse'}`}
-        >
-          {isKeyReady ? <CheckCircle2 className="w-4 h-4" /> : <Key className="w-4 h-4" />}
-          {isKeyReady ? 'เชื่อมต่อแล้ว' : 'กดเชื่อมต่อระบบก่อนใช้งาน'}
-        </button>
+        <div className="flex items-center gap-2">
+           <button onClick={openKeySelector} className="text-[10px] bg-white/5 hover:bg-white/10 px-3 py-1.5 rounded-full border border-white/10 transition-all flex items-center gap-2">
+             <Settings2 className="w-3 h-3" /> ตั้งค่า Key
+           </button>
+        </div>
       </nav>
 
       <main className="flex-1 container mx-auto p-4 lg:p-8 flex flex-col lg:grid lg:grid-cols-12 gap-8">
-        
-        {/* Left Panel: Controls */}
         <div className="lg:col-span-4 space-y-6">
           <div className="glass rounded-[32px] p-6 space-y-6 border border-white/10 shadow-2xl">
-            
-            {/* 01. รูปสินค้า */}
             <div className="space-y-3">
-              <div className="flex justify-between items-center">
-                <label className="text-[11px] font-bold text-amber-500 uppercase flex items-center gap-2 tracking-widest"><Layers className="w-4 h-4" /> 01. รูปสินค้า</label>
+              <label className="text-[11px] font-bold text-amber-500 uppercase flex items-center gap-2 tracking-widest"><Layers className="w-4 h-4" /> 01. รูปสินค้า</label>
+              <div className="flex items-center justify-between bg-black/40 p-2 rounded-xl border border-white/5">
+                <span className="text-[10px] text-slate-400 px-2">{removeBackground ? 'เปิดระบบตัดฉากหลัง' : 'ใช้รูปต้นฉบับ'}</span>
                 <button 
                   onClick={() => setRemoveBackground(!removeBackground)}
-                  className={`text-[9px] px-2 py-1 rounded-md border transition-all ${removeBackground ? 'bg-amber-500 text-black border-amber-500' : 'bg-white/5 text-slate-500 border-white/5'}`}
+                  className={`w-10 h-5 rounded-full transition-all relative ${removeBackground ? 'bg-amber-500' : 'bg-slate-700'}`}
                 >
-                  {removeBackground ? 'AI ตัดฉากหลังให้' : 'ใช้พื้นหลังเดิม'}
+                  <div className={`absolute top-1 w-3 h-3 bg-white rounded-full transition-all ${removeBackground ? 'right-1' : 'left-1'}`} />
                 </button>
               </div>
-              <label className="block w-full h-44 border-2 border-dashed border-white/10 rounded-2xl bg-black/40 hover:border-amber-500/50 transition-all cursor-pointer overflow-hidden relative group shadow-inner">
+              <label className="block w-full h-44 border-2 border-dashed border-white/10 rounded-2xl bg-black/40 hover:border-amber-500/50 transition-all cursor-pointer overflow-hidden relative group">
                 <input type="file" className="hidden" accept="image/*" onChange={handleProductUpload} />
                 {productImage ? (
-                  <img src={productImage} className="w-full h-full object-contain p-4 animate-in fade-in" />
+                  <img src={productImage} className="w-full h-full object-contain p-4" />
                 ) : (
                   <div className="h-full flex flex-col items-center justify-center text-slate-500 group-hover:text-amber-500 transition-colors">
                     <ImageIcon className="w-10 h-10 mb-2 opacity-20" />
-                    <span className="text-[10px] font-bold uppercase tracking-widest">อัปโหลดรูปสินค้าที่นี่</span>
+                    <span className="text-[10px] font-bold uppercase tracking-widest">คลิกเพื่อเพิ่มรูปสินค้า</span>
                   </div>
                 )}
               </label>
             </div>
 
-            {/* 02. ข้อมูลสินค้า */}
             <div className="space-y-3">
               <div className="flex justify-between items-center">
                 <label className="text-[11px] font-bold text-amber-500 uppercase flex items-center gap-2 tracking-widest"><TypeIcon className="w-4 h-4" /> 02. ข้อมูลสินค้า</label>
@@ -292,33 +267,30 @@ const App: React.FC = () => {
               <textarea 
                 value={prompt}
                 onChange={e => setPrompt(e.target.value)}
-                placeholder="พิมพ์ชื่อสินค้า เช่น 'กาแฟคั่วเข้มเมืองน่าน'..."
-                className="w-full bg-black/40 border border-white/10 rounded-xl p-3 text-xs focus:border-amber-500/50 outline-none h-20 resize-none"
+                placeholder="ชื่อสินค้าหรือคำอธิบายสั้นๆ..."
+                className="w-full bg-black/40 border border-white/10 rounded-xl p-3 text-xs focus:border-amber-500/50 outline-none h-16 resize-none"
               />
-              {aiSlogans.length > 0 && (
-                <div className="flex flex-wrap gap-1.5 pt-1">
-                  {aiSlogans.map((s, i) => (
-                    <button key={i} onClick={() => setPosterText(s)} className="text-[9px] px-2 py-1 bg-white/5 border border-white/5 rounded-lg hover:border-amber-500/50 transition-all">{s}</button>
-                  ))}
-                </div>
-              )}
+              <div className="flex flex-wrap gap-1.5">
+                {aiSlogans.map((s, i) => (
+                  <button key={i} onClick={() => setPosterText(s)} className="text-[9px] px-2 py-1 bg-white/5 border border-white/10 rounded-lg hover:border-amber-500/50 transition-all">{s}</button>
+                ))}
+              </div>
               <input 
                 type="text"
                 value={posterText}
                 onChange={e => setPosterText(e.target.value)}
-                placeholder="ข้อความที่จะแสดงบนภาพ"
-                className="w-full bg-black/40 border border-white/10 rounded-xl px-4 py-3 text-xs focus:border-amber-500/50 outline-none mt-2 shadow-inner"
+                placeholder="ข้อความที่ต้องการโชว์บนภาพ"
+                className="w-full bg-black/40 border border-white/10 rounded-xl px-4 py-3 text-xs focus:border-amber-500/50 outline-none"
               />
             </div>
 
-            {/* Step 3: Style & Ratio */}
             <div className="grid grid-cols-2 gap-4">
               <div className="space-y-3">
                 <label className="text-[11px] font-bold text-amber-500 uppercase tracking-widest flex items-center gap-2"><Settings2 className="w-4 h-4" /> 03. สไตล์</label>
                 <select 
                   value={styleIndex}
                   onChange={e => setStyleIndex(Number(e.target.value))}
-                  className="w-full bg-black/60 border border-white/10 rounded-xl px-3 py-2.5 text-[11px] focus:border-amber-500/50 outline-none"
+                  className="w-full bg-black/60 border border-white/10 rounded-xl px-2 py-2.5 text-[10px] focus:border-amber-500/50 outline-none"
                 >
                   {STYLE_PRESETS.map((s, i) => <option key={i} value={i}>{s.label}</option>)}
                 </select>
@@ -328,74 +300,79 @@ const App: React.FC = () => {
                 <select 
                   value={aspectRatio}
                   onChange={e => setAspectRatio(e.target.value as any)}
-                  className="w-full bg-black/60 border border-white/10 rounded-xl px-3 py-2.5 text-[11px] focus:border-amber-500/50 outline-none"
+                  className="w-full bg-black/60 border border-white/10 rounded-xl px-2 py-2.5 text-[10px] focus:border-amber-500/50 outline-none"
                 >
                   {ASPECT_RATIOS.map(r => <option key={r.id} value={r.id}>{r.label}</option>)}
                 </select>
               </div>
             </div>
 
-            {/* 05. โลโก้แบรนด์ */}
             <div className="space-y-3">
               <label className="text-[11px] font-bold text-amber-500 uppercase tracking-widest flex items-center gap-2"><Tag className="w-4 h-4" /> 05. โลโก้แบรนด์</label>
               <div className="flex flex-wrap gap-3">
                 {logos.map(l => (
-                  <div key={l.id} className="relative w-14 h-14 bg-white/10 rounded-2xl p-2 border border-white/10 group shadow-lg">
+                  <div key={l.id} className="relative w-12 h-12 bg-white/10 rounded-xl p-2 border border-white/10 group shadow-lg">
                     <img src={l.url} className="w-full h-full object-contain" />
-                    <button onClick={() => setLogos(prev => prev.filter(x => x.id !== l.id))} className="absolute -top-2 -right-2 bg-red-500 rounded-full p-1 opacity-0 group-hover:opacity-100 transition-all shadow-lg">
+                    <button onClick={() => setLogos(prev => prev.filter(x => x.id !== l.id))} className="absolute -top-2 -right-2 bg-red-500 rounded-full p-1 opacity-0 group-hover:opacity-100 transition-all">
                       <X className="w-3 h-3 text-white" />
                     </button>
                   </div>
                 ))}
-                <label className="w-14 h-14 border-2 border-dashed border-white/10 rounded-2xl flex items-center justify-center cursor-pointer hover:border-amber-500/50 transition-all bg-black/20">
+                <label className="w-12 h-12 border-2 border-dashed border-white/10 rounded-xl flex items-center justify-center cursor-pointer hover:border-amber-500/50 transition-all bg-black/20">
                   <input type="file" className="hidden" accept="image/*" onChange={handleLogoUpload} />
-                  <Plus className="w-6 h-6 text-slate-500" />
+                  <Plus className="w-5 h-5 text-slate-500" />
                 </label>
               </div>
             </div>
 
-            {/* Main Action Button */}
+            {error && (
+              <div className="bg-red-500/10 border border-red-500/20 p-4 rounded-2xl flex items-start gap-3 text-red-400 animate-in fade-in slide-in-from-top-2">
+                <AlertTriangle className="w-5 h-5 shrink-0 mt-0.5" />
+                <p className="text-[11px] font-bold leading-relaxed">{error}</p>
+              </div>
+            )}
+
             <button 
               onClick={handleGenerate}
               disabled={isGenerating}
-              className={`w-full py-5 rounded-[30px] font-black text-sm flex items-center justify-center gap-3 transition-all active:scale-95 shadow-2xl ${isKeyReady ? 'bg-amber-500 text-black shadow-amber-500/20' : 'bg-orange-600 text-white animate-pulse'}`}
+              className={`w-full py-5 rounded-[24px] font-black text-sm flex items-center justify-center gap-3 transition-all active:scale-95 bg-amber-500 text-black shadow-xl shadow-amber-500/20 disabled:opacity-50 hover:bg-amber-400`}
             >
-              {isGenerating ? <RefreshCw className="w-5 h-5 animate-spin" /> : <Sparkles className="w-5 h-5" />}
-              {isGenerating ? 'กำลังสร้างภาพ...' : isKeyReady ? 'เนรมิตโปสเตอร์สินค้า' : 'เชื่อมต่อระบบก่อนใช้งาน'}
+              {isGenerating ? <RefreshCw className="w-5 h-5 animate-spin" /> : <Rocket className="w-5 h-5" />}
+              {isGenerating ? 'กำลังเนรมิตภาพ...' : 'เนรมิตโปสเตอร์เดี๋ยวนี้!'}
             </button>
           </div>
         </div>
 
-        {/* Right Panel: Preview Area */}
         <div className="lg:col-span-8 flex flex-col gap-6">
-          <div className="bg-white/[0.02] border border-white/5 rounded-[60px] flex-1 min-h-[500px] flex flex-col items-center justify-center relative p-8 shadow-2xl">
+          <div className="bg-white/[0.02] border border-white/5 rounded-[60px] flex-1 min-h-[500px] flex flex-col items-center justify-center relative p-8 shadow-2xl overflow-hidden">
             {isGenerating ? (
               <div className="text-center space-y-6">
-                <div className="w-20 h-20 border-4 border-amber-500 border-t-transparent rounded-full animate-spin mx-auto shadow-lg shadow-amber-500/10"></div>
+                <div className="relative">
+                   <div className="w-24 h-24 border-4 border-amber-500/20 rounded-full mx-auto"></div>
+                   <div className="w-24 h-24 border-4 border-amber-500 border-t-transparent rounded-full animate-spin absolute top-0 left-1/2 -ml-12"></div>
+                </div>
                 <div className="space-y-2">
-                  <p className="text-sm font-bold text-amber-500 uppercase tracking-widest animate-pulse">AI กำลังปรุงแต่งฉากหลัง...</p>
-                  <p className="text-[9px] text-slate-500 uppercase">กรุณารอสักครู่ (ประมาณ 10-15 วินาที)</p>
+                  <p className="text-sm font-bold text-amber-500 uppercase tracking-widest animate-pulse">AI กำลังทำงานอย่างหนัก...</p>
+                  <p className="text-[10px] text-slate-500 uppercase">อาจใช้เวลา 10-20 วินาที โปรดอย่าเพิ่งกดซ้ำ</p>
                 </div>
               </div>
             ) : currentPoster ? (
-              <div className="w-full flex flex-col items-center gap-8 animate-in fade-in zoom-in duration-500">
-                <div className="relative shadow-2xl rounded-[40px] overflow-hidden border border-white/10 bg-black max-w-full">
-                  <img src={currentPoster.url} className="max-h-[600px] w-auto block" />
-                  
-                  {/* Real-time Overlays */}
+              <div className="w-full h-full flex flex-col items-center justify-center gap-8 animate-in fade-in zoom-in duration-500">
+                <div className="relative shadow-2xl rounded-[32px] overflow-hidden border border-white/10 bg-black max-w-full">
+                  <img src={currentPoster.url} className="max-h-[65vh] w-auto block" />
                   <div className="absolute top-6 right-6 flex flex-col gap-4">
-                    {logos.map(l => <img key={l.id} src={l.url} className="w-14 h-14 object-contain drop-shadow-lg" />)}
+                    {logos.map(l => <img key={l.id} src={l.url} className="w-16 h-16 object-contain drop-shadow-xl" />)}
                   </div>
                   {posterText && (
                     <div className="absolute bottom-10 inset-x-0 text-center px-8">
-                      <p className="text-white text-4xl font-black italic drop-shadow-[0_8px_16px_rgba(0,0,0,0.8)] uppercase tracking-tight">{posterText}</p>
+                      <p className="text-white text-3xl md:text-5xl font-black italic drop-shadow-[0_8px_16px_rgba(0,0,0,0.9)] uppercase tracking-tight">{posterText}</p>
                     </div>
                   )}
                 </div>
 
                 <div className="flex gap-4">
-                  <button onClick={downloadImage} className="bg-white text-black px-10 py-4 rounded-full font-black text-[11px] uppercase tracking-widest flex items-center gap-2 hover:bg-amber-400 transition-all shadow-xl active:scale-95">
-                    <Download className="w-4 h-4" /> บันทึกรูปภาพสำเร็จ
+                  <button onClick={downloadImage} className="bg-white text-black px-12 py-4 rounded-full font-black text-[12px] uppercase tracking-widest flex items-center gap-2 hover:bg-amber-400 transition-all shadow-xl active:scale-95">
+                    <Download className="w-5 h-5" /> บันทึกภาพผลลัพธ์
                   </button>
                   <button onClick={() => setCurrentPoster(null)} className="bg-white/5 text-white p-4 rounded-full hover:bg-white/10 border border-white/10 transition-all">
                     <X className="w-5 h-5" />
@@ -403,16 +380,16 @@ const App: React.FC = () => {
                 </div>
               </div>
             ) : (
-              <div className="text-center group">
-                <div className="w-24 h-24 bg-white/5 rounded-full flex items-center justify-center mx-auto mb-6 group-hover:scale-110 transition-transform">
-                   <ImageIcon className="w-10 h-10 text-slate-700" />
+              <div className="text-center opacity-30">
+                <div className="w-32 h-32 bg-white/5 rounded-full flex items-center justify-center mx-auto mb-6">
+                   <ImageIcon className="w-16 h-16 text-slate-700" />
                 </div>
-                <p className="text-[10px] font-black uppercase tracking-[0.5em] text-slate-600">Preview พื้นที่แสดงผล</p>
+                <p className="text-[11px] font-black uppercase tracking-[0.5em] text-slate-600">พื้นที่แสดงผลโปสเตอร์</p>
               </div>
             )}
+            <canvas ref={canvasRef} className="hidden" />
           </div>
 
-          {/* History */}
           {history.length > 0 && (
             <div className="flex gap-4 overflow-x-auto pb-4 scrollbar-hide px-2">
               {history.map(h => (
