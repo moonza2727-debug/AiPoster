@@ -2,10 +2,10 @@
 import { GoogleGenAI, Type } from "@google/genai";
 import { GenerationConfig } from "../types";
 
-// ดึง AI Instance พร้อม Key ล่าสุด
+// ดึง AI Instance พร้อมดึงค่า Key สดๆ ณ วินาทีที่เรียกใช้งาน
 const getAI = () => {
   const apiKey = process.env.API_KEY;
-  // ตรวจสอบทั้งกรณีเป็นค่าว่าง หรือเป็น String "undefined" ที่บาง Environment ส่งมา
+  // ตรวจสอบกรณี Key ไม่มี หรือเป็นค่า undefined (string) ที่บางครั้งระบบส่งมา
   if (!apiKey || apiKey === "undefined" || apiKey.length < 5) {
     throw new Error("MISSING_KEY");
   }
@@ -19,7 +19,7 @@ export const generatePosterSlogan = async (productInfo: string): Promise<string[
       model: 'gemini-3-flash-preview',
       contents: [{
         parts: [{
-          text: `Generate 5 catchy marketing slogans in Thai for: "${productInfo}". Return as JSON array of strings.`
+          text: `ทำหน้าที่เป็นก๊อปปี้ไรเตอร์มืออาชีพ ช่วยคิดคำโฆษณาสั้นๆ (ไม่เกิน 10 คำ) สำหรับสินค้า: "${productInfo}" จำนวน 5 ข้อความ ให้น่าสนใจและเหมาะกับโปสเตอร์ขายของ ตอบกลับเป็นรูปแบบ JSON array ของ string เท่านั้น`
         }]
       }],
       config: {
@@ -30,11 +30,12 @@ export const generatePosterSlogan = async (productInfo: string): Promise<string[
         }
       }
     });
-    return JSON.parse(response.text || "[]");
+    const text = response.text;
+    return text ? JSON.parse(text.trim()) : [];
   } catch (e: any) {
     if (e.message === "MISSING_KEY") throw e;
-    if (e?.message?.includes("429")) throw new Error("QUOTA_EXCEEDED");
-    throw e;
+    console.error("Slogan Error:", e);
+    return [];
   }
 };
 
@@ -42,14 +43,14 @@ export const generatePosterImage = async (config: GenerationConfig): Promise<str
   try {
     const ai = getAI();
     
-    // แปล Prompt เป็นอังกฤษเพื่อผลลัพธ์ที่ดีขึ้น
+    // พยายามขยาย Prompt เป็นภาษาอังกฤษเพื่อให้ AI เจนภาพได้สวยขึ้น
     let enhancedPrompt = config.prompt;
     try {
       const transRes = await ai.models.generateContent({
         model: 'gemini-3-flash-preview',
         contents: [{
           parts: [{
-            text: `Translate to English for AI Image Gen: "${config.prompt}"`
+            text: `Optimize this product description for professional photography AI image generation: "${config.prompt}". Focus on lighting, high-end materials, and studio setup. Style: ${config.style}.`
           }]
         }],
       });
@@ -58,25 +59,31 @@ export const generatePosterImage = async (config: GenerationConfig): Promise<str
 
     const contentsParts: any[] = [];
     if (config.baseImage) {
+      // ทำความสะอาด base64 string
       const base64Data = config.baseImage.includes(',') ? config.baseImage.split(',')[1] : config.baseImage;
       contentsParts.push({ inlineData: { data: base64Data, mimeType: 'image/png' } });
     }
 
     contentsParts.push({ 
-      text: `Style: ${config.style}. Prompt: ${enhancedPrompt}. Product poster, professional studio lighting, 8k resolution.` 
+      text: `Professional product photography, ${enhancedPrompt}, ${config.style}, studio background, commercial lighting, 8k resolution, cinematic look, depth of field.` 
     });
 
     const response = await ai.models.generateContent({
       model: 'gemini-2.5-flash-image',
       contents: [{ parts: contentsParts }],
-      config: { imageConfig: { aspectRatio: config.aspectRatio as any } }
+      config: { 
+        imageConfig: { 
+          aspectRatio: config.aspectRatio as any 
+        } 
+      }
     });
 
+    // ค้นหาภาพในผลลัพธ์
     const part = response.candidates?.[0]?.content?.parts?.find(p => p.inlineData?.data);
     if (part?.inlineData?.data) {
       return `data:${part.inlineData.mimeType || 'image/png'};base64,${part.inlineData.data}`;
     }
-    throw new Error("IMAGE_GEN_FAILED");
+    throw new Error("API_RETURNED_NO_IMAGE");
   } catch (error: any) {
     if (error.message === "MISSING_KEY") throw error;
     if (error?.message?.includes("Requested entity was not found")) throw new Error("KEY_INVALID");
@@ -86,6 +93,7 @@ export const generatePosterImage = async (config: GenerationConfig): Promise<str
 
 export const hasApiKey = async (): Promise<boolean> => {
   const win = window as any;
+  // ตรวจสอบทั้งจาก window.aistudio และ process.env
   if (win.aistudio?.hasSelectedApiKey) {
     try {
       if (await win.aistudio.hasSelectedApiKey()) return true;
@@ -101,7 +109,9 @@ export const openKeySelector = async (): Promise<boolean> => {
     try {
       await win.aistudio.openSelectKey();
       return true;
-    } catch (e) {}
+    } catch (e) {
+      console.error("Open key dialog error:", e);
+    }
   }
   return false;
 };
