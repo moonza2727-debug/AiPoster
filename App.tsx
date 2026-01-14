@@ -1,5 +1,5 @@
 
-import React, { useState, useRef } from 'react';
+import React, { useState, useRef, useEffect } from 'react';
 import { 
   Sparkles, 
   Image as ImageIcon, 
@@ -17,7 +17,7 @@ import {
 } from 'lucide-react';
 import { AspectRatio, GeneratedPoster } from './types';
 import { STYLE_PRESETS, ASPECT_RATIOS } from './constants';
-import { generatePosterImage, openKeySelector, generatePosterSlogan, checkKeyStatus } from './services/gemini';
+import { generatePosterImage, openKeySelector, generatePosterSlogan } from './services/gemini';
 
 interface Logo {
   id: string;
@@ -34,6 +34,7 @@ const App: React.FC = () => {
   const [isSloganLoading, setIsSloganLoading] = useState(false);
   const [aiSlogans, setAiSlogans] = useState<string[]>([]);
   const [error, setError] = useState<string | null>(null);
+  const [isAiStudio, setIsAiStudio] = useState(false);
   
   const [productImage, setProductImage] = useState<string | null>(null);
   const [logos, setLogos] = useState<Logo[]>([]);
@@ -41,6 +42,13 @@ const App: React.FC = () => {
   const [currentPoster, setCurrentPoster] = useState<GeneratedPoster | null>(null);
   
   const canvasRef = useRef<HTMLCanvasElement>(null);
+
+  // ตรวจสอบว่ารันอยู่ใน AI Studio หรือไม่
+  useEffect(() => {
+    if ((window as any).aistudio) {
+      setIsAiStudio(true);
+    }
+  }, []);
 
   const processImage = (file: File): Promise<string> => {
     return new Promise((resolve) => {
@@ -92,23 +100,11 @@ const App: React.FC = () => {
     }
     setIsSloganLoading(true);
     try {
-      const isOk = await checkKeyStatus();
-      if (!isOk) {
-        await openKeySelector();
-        // ถ้าหลังเปิด Selector แล้วยังไม่มี Key (สำหรับกรณีนอก AI Studio) ให้หยุดทำงาน
-        if (!(await checkKeyStatus())) {
-          throw new Error("KEY_NOT_FOUND");
-        }
-      }
       const suggestions = await generatePosterSlogan(prompt);
       setAiSlogans(suggestions);
     } catch (e: any) {
       console.error("Slogan fail:", e);
-      if (e.message === "KEY_NOT_FOUND") {
-        setError("ไม่พบ API Key สำหรับการใช้งาน กรุณาตั้งค่าในระบบ Hosting");
-      } else {
-        setError("AI คิดสโลแกนไม่สำเร็จในขณะนี้");
-      }
+      setError("ไม่สามารถขอสโลแกนได้ กรุณาตรวจสอบ API_KEY");
     } finally {
       setIsSloganLoading(false);
     }
@@ -125,14 +121,6 @@ const App: React.FC = () => {
     setIsGenerating(true);
 
     try {
-      // ตรวจสอบ Key ก่อนเริ่ม
-      if (!(await checkKeyStatus())) {
-        await openKeySelector();
-        if (!(await checkKeyStatus())) {
-          throw new Error("KEY_NOT_FOUND");
-        }
-      }
-
       const result = await generatePosterImage({
         prompt: prompt || "Premium product",
         style: STYLE_PRESETS[styleIndex].label as any,
@@ -156,12 +144,7 @@ const App: React.FC = () => {
       setHistory(prev => [newPoster, ...prev].slice(0, 10));
     } catch (err: any) {
       console.error("Generate error:", err);
-      if (err.message === "KEY_INVALID" || err.message === "KEY_NOT_FOUND") {
-        setError("API Key ไม่ถูกต้องหรือยังไม่ได้ตั้งค่า กรุณาตรวจสอบการตั้งค่าบน Hosting (Environment Variables)");
-        await openKeySelector();
-      } else {
-        setError(err.message === "AI_NO_IMAGE" ? "AI ไม่สามารถสร้างภาพได้ กรุณาลองเปลี่ยนคำอธิบาย" : "เกิดข้อผิดพลาดทางเทคนิค กรุณาลองใหม่ในภายหลัง");
-      }
+      setError("เกิดข้อผิดพลาด: โปรดตรวจสอบว่าคุณได้กด Redeploy ใน Vercel หลังจากตั้งค่า Environment Variable แล้วหรือยัง?");
     } finally {
       setIsGenerating(false);
     }
@@ -215,13 +198,15 @@ const App: React.FC = () => {
           </div>
           <div>
             <h1 className="text-lg font-bold leading-none">AI POSTER PRO</h1>
-            <p className="text-[9px] text-amber-500/80 uppercase tracking-widest mt-1">Nan Smart Marketing Engine</p>
+            <p className="text-[9px] text-amber-500/80 uppercase tracking-widest mt-1">Smart Marketing Engine</p>
           </div>
         </div>
         <div className="flex items-center gap-2">
-           <button onClick={openKeySelector} className="text-[10px] bg-white/5 hover:bg-white/10 px-3 py-1.5 rounded-full border border-white/10 transition-all flex items-center gap-2">
-             <Settings2 className="w-3 h-3" /> ตั้งค่า Key
-           </button>
+           {isAiStudio && (
+             <button onClick={openKeySelector} className="text-[10px] bg-white/5 hover:bg-white/10 px-3 py-1.5 rounded-full border border-white/10 transition-all flex items-center gap-2">
+               <Settings2 className="w-3 h-3" /> ตั้งค่า Key
+             </button>
+           )}
         </div>
       </nav>
 

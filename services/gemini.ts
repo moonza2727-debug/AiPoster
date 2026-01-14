@@ -2,15 +2,11 @@
 import { GoogleGenAI, Type } from "@google/genai";
 import { GenerationConfig } from "../types";
 
-// ฟังก์ชันดึง AI Client ที่ทนทานต่อสภาพแวดล้อมที่แตกต่างกัน
+// ใช้การดึง API Client แบบตรงไปตรงมาตามกฎ
+// Assume ว่า process.env.API_KEY ถูกเซตมาให้แล้วในระบบ Hosting
 const getAIClient = () => {
-  // ตรวจสอบทั้งใน process.env และในตัวแปร Global
-  const apiKey = (typeof process !== 'undefined' && process.env?.API_KEY) || (window as any).API_KEY;
-  
-  if (!apiKey || apiKey === "undefined" || apiKey === "") {
-    throw new Error("KEY_NOT_FOUND");
-  }
-  return new GoogleGenAI({ apiKey });
+  const apiKey = process.env.API_KEY;
+  return new GoogleGenAI({ apiKey: apiKey as string });
 };
 
 export const generatePosterSlogan = async (productInfo: string): Promise<string[]> => {
@@ -34,7 +30,6 @@ export const generatePosterSlogan = async (productInfo: string): Promise<string[
     return JSON.parse(response.text || "[]");
   } catch (e: any) {
     console.error("Slogan Error:", e);
-    if (e.message === "KEY_NOT_FOUND") throw e;
     return ["สินค้าคุณภาพดี", "โปรโมชั่นพิเศษ", "ของเด็ดเมืองน่าน", "พรีเมียมเกรด A", "คุ้มค่าราคาประหยัด"];
   }
 };
@@ -80,13 +75,6 @@ export const generatePosterImage = async (config: GenerationConfig): Promise<str
     }
     throw new Error("AI_NO_IMAGE");
   } catch (error: any) {
-    const errorMsg = error?.message || "";
-    if (errorMsg.includes("Requested entity was not found") || 
-        errorMsg.includes("404") || 
-        errorMsg.includes("401") || 
-        errorMsg.includes("API_KEY_INVALID")) {
-      throw new Error("KEY_INVALID");
-    }
     throw error;
   }
 };
@@ -95,15 +83,5 @@ export const openKeySelector = async (): Promise<void> => {
   const win = window as any;
   if (win.aistudio?.openSelectKey) {
     await win.aistudio.openSelectKey();
-  } else {
-    // กรณีอยู่บนเว็บทั่วไป ให้แนะนำวิธีตั้งค่า
-    const msg = "ไม่พบระบบเลือก Key อัตโนมัติ (แอปทำงานนอก AI Studio)\n\nกรุณาตั้งค่า API_KEY ใน Environment Variables ของ Hosting ของคุณ หรือติดต่อผู้ดูแลระบบ";
-    console.warn(msg);
-    alert(msg);
   }
-};
-
-export const checkKeyStatus = async (): Promise<boolean> => {
-  const apiKey = (typeof process !== 'undefined' && process.env?.API_KEY) || (window as any).API_KEY;
-  return !!(apiKey && apiKey !== "undefined" && apiKey !== "");
 };
