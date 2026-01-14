@@ -99,13 +99,19 @@ export const generatePosterImage = async (config: GenerationConfig): Promise<str
       }
     });
 
-    // ใช้การตรวจสอบแบบละเอียดเพื่อแก้ปัญหา TypeScript Error (TS18048)
-    const candidate = response.candidates && response.candidates[0];
-    const candidateParts = candidate?.content?.parts;
-
-    if (!candidateParts || candidateParts.length === 0) {
+    // ตรวจสอบ Candidates (แก้ปัญหา TS18048)
+    if (!response.candidates || response.candidates.length === 0) {
       throw new Error("API_RETURNED_NO_IMAGE");
     }
+
+    const candidate = response.candidates[0];
+    
+    // ตรวจสอบ Content และ Parts แบบ Explicit เพื่อให้ TypeScript มั่นใจว่ามีข้อมูลจริง
+    if (!candidate.content || !candidate.content.parts || candidate.content.parts.length === 0) {
+      throw new Error("API_RETURNED_NO_IMAGE");
+    }
+
+    const candidateParts = candidate.content.parts;
 
     for (const part of candidateParts) {
       if (part.inlineData && part.inlineData.data) {
