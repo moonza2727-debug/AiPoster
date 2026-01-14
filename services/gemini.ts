@@ -2,10 +2,9 @@
 import { GoogleGenAI, Type } from "@google/genai";
 import { GenerationConfig } from "../types";
 
-// ฟังก์ชันสร้าง AI Instance โดยดึง Key จาก Environment
 const getAI = () => {
   const apiKey = process.env.API_KEY;
-  if (!apiKey || apiKey === "undefined" || apiKey.length < 5) {
+  if (!apiKey || apiKey === "undefined") {
     throw new Error("MISSING_KEY");
   }
   return new GoogleGenAI({ apiKey });
@@ -18,7 +17,7 @@ export const generatePosterSlogan = async (productInfo: string): Promise<string[
       model: 'gemini-3-flash-preview',
       contents: [{
         parts: [{
-          text: `คุณคือผู้เชี่ยวชาญด้านการตลาด ช่วยคิดคำโปรโมทสินค้าสั้นๆ 5 แบบ สำหรับ: "${productInfo}" ให้น่าสนใจและสะดุดตา ตอบกลับเป็น JSON Array ของ String เท่านั้น (ภาษาไทย)`
+          text: `คุณคือผู้เชี่ยวชาญด้านการตลาด ช่วยคิดคำโปรโมทสินค้าสั้นๆ 5 แบบ สำหรับสินค้า: "${productInfo}" ให้ดูพรีเมียมและน่าซื้อ ตอบกลับเป็น JSON Array ของ String เท่านั้น (ภาษาไทย)`
         }]
       }],
       config: {
@@ -32,26 +31,26 @@ export const generatePosterSlogan = async (productInfo: string): Promise<string[
     return JSON.parse(response.text || "[]");
   } catch (e: any) {
     console.error("Slogan Error:", e);
-    return ["สินค้าคุณภาพดี", "โปรโมชั่นพิเศษวันนี้", "หอม อร่อย ต้องลอง", "ของดีเมืองน่าน", "ราคาคุ้มค่า"];
+    return ["สินค้าคุณภาพดี", "โปรโมชั่นพิเศษ", "ของดีเมืองน่าน", "ราคาคุ้มค่า"];
   }
 };
 
 export const generatePosterImage = async (config: GenerationConfig): Promise<string> => {
   const ai = getAI();
   
-  // แปลและปรับจูน Prompt ให้สวยขึ้น (โหมดฟรี)
-  let finalPrompt = config.prompt;
+  let enhancedPrompt = config.prompt;
   try {
     const trans = await ai.models.generateContent({
       model: 'gemini-3-flash-preview',
-      contents: [{ parts: [{ text: `Convert to professional English image generation prompt: "${config.prompt}". Style: ${config.style}. High quality, studio lighting.` }] }]
+      contents: [{ parts: [{ text: `Create a professional product photography prompt: "${config.prompt}". Style: ${config.style}.` }] }]
     });
-    finalPrompt = trans.text || config.prompt;
+    enhancedPrompt = trans.text || config.prompt;
   } catch (e) {}
 
   const parts: any[] = [];
+  
   if (config.baseImage) {
-    const base64Data = config.baseImage.split(',')[1] || config.baseImage;
+    const base64Data = config.baseImage.includes(',') ? config.baseImage.split(',')[1] : config.baseImage;
     parts.push({
       inlineData: {
         data: base64Data,
@@ -60,29 +59,34 @@ export const generatePosterImage = async (config: GenerationConfig): Promise<str
     });
   }
   
+  // คำสั่งลบพื้นหลังแบบ AI (Inpainting/Replacement)
+  const bgInstruction = config.removeBackground 
+    ? "IMPORTANT: Completely remove the original background from the uploaded image and replace it with the new style. Isolate the product perfectly." 
+    : "Integrate the product naturally into the scene.";
+
   parts.push({ 
-    text: `Professional product poster, ${finalPrompt}, background style ${config.style}, cinematic lighting, masterpiece, 8k.` 
+    text: `${bgInstruction} Commercial product poster of ${enhancedPrompt}. Background style: ${config.style}. Professional studio lighting, 8k, cinematic masterpiece.` 
   });
 
   try {
     const response = await ai.models.generateContent({
       model: 'gemini-2.5-flash-image',
-      contents: { parts }, // ใช้โครงสร้าง contents: { parts } ตามคำแนะนำ SDK
+      contents: { parts },
       config: {
         imageConfig: {
-          aspectRatio: config.aspectRatio as any
+          aspectRatio: config.aspectRatio as any // '1:1', '3:4', '16:9' etc.
         }
       }
     });
 
-    // ตรวจสอบข้อมูลภาพใน Response
-    const imagePart = response.candidates?.[0]?.content?.parts?.find(p => p.inlineData);
-    if (imagePart?.inlineData?.data) {
-      return `data:image/png;base64,${imagePart.inlineData.data}`;
+    for (const part of response.candidates?.[0]?.content?.parts || []) {
+      if (part.inlineData?.data) {
+        return `data:image/png;base64,${part.inlineData.data}`;
+      }
     }
-    throw new Error("AI ไม่คืนค่ารูปภาพกลับมา");
+    throw new Error("AI ไม่สามารถสร้างรูปภาพได้");
   } catch (error: any) {
-    if (error?.message?.includes("429")) throw new Error("โควตาฟรีหมดชั่วคราว (รอ 1 นาที)");
+    if (error?.message?.includes("429")) throw new Error("โควตาเต็ม (รอ 1 นาที)");
     throw error;
   }
 };
@@ -94,7 +98,5 @@ export const hasApiKey = async (): Promise<boolean> => {
 
 export const openKeySelector = async (): Promise<void> => {
   const win = window as any;
-  if (win.aistudio?.openSelectKey) {
-    await win.aistudio.openSelectKey();
-  }
+  if (win.aistudio?.openSelectKey) await win.aistudio.openSelectKey();
 };
