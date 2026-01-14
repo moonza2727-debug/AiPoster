@@ -2,16 +2,23 @@
 import { GoogleGenAI, Type } from "@google/genai";
 import { GenerationConfig } from "../types";
 
-// Helper สำหรับสร้าง Instance ของ AI โดยใช้ Key ล่าสุด
+// ฟังก์ชันดึง API Key ที่ปลอดภัยที่สุด
+const getSafeKey = (): string | undefined => {
+  try {
+    return process.env.API_KEY;
+  } catch (e) {
+    return undefined;
+  }
+};
+
 const getAI = () => {
-  const apiKey = process.env.API_KEY;
+  const apiKey = getSafeKey();
   if (!apiKey) throw new Error("MISSING_KEY");
   return new GoogleGenAI({ apiKey });
 };
 
 export const generatePosterSlogan = async (productInfo: string): Promise<string[]> => {
   const ai = getAI();
-  
   try {
     const response = await ai.models.generateContent({
       model: 'gemini-3-flash-preview',
@@ -30,14 +37,9 @@ export const generatePosterSlogan = async (productInfo: string): Promise<string[
         }
       }
     });
-    
-    // ใช้ getter .text ตามคำแนะนำของ SDK
-    const responseText = response.text;
-    if (!responseText) return [];
-    
-    return JSON.parse(responseText.trim());
+    const text = response.text;
+    return text ? JSON.parse(text.trim()) : [];
   } catch (e: any) {
-    console.error("Slogan Error:", e);
     if (e?.message?.includes("429")) throw new Error("QUOTA_EXCEEDED");
     throw e;
   }
@@ -45,118 +47,72 @@ export const generatePosterSlogan = async (productInfo: string): Promise<string[
 
 export const generatePosterImage = async (config: GenerationConfig): Promise<string> => {
   const ai = getAI();
-  
-  // 1. แปลและปรับปรุง Prompt
   let enhancedPrompt = config.prompt;
+  
   try {
-    const translationResult = await ai.models.generateContent({
+    const transRes = await ai.models.generateContent({
       model: 'gemini-3-flash-preview',
       contents: [{
         parts: [{
-          text: `Translate and enhance this Thai product description into a professional English visual prompt for product photography: "${config.prompt}". Include keywords for 8k, studio lighting, and high-end feel. Return only the English text.`
+          text: `Enhance this Thai description into an English high-end product photography prompt: "${config.prompt}".`
         }]
       }],
     });
-    enhancedPrompt = translationResult.text || config.prompt;
-  } catch (e) {
-    console.warn("Translation fallback used");
-  }
+    enhancedPrompt = transRes.text || config.prompt;
+  } catch (e) {}
 
-  // 2. เตรียม Parts สำหรับโมเดลรูปภาพ
   const contentsParts: any[] = [];
-  
   if (config.baseImage) {
-    const base64Data = config.baseImage.includes(',') 
-      ? config.baseImage.split(',')[1] 
-      : config.baseImage;
-      
-    contentsParts.push({
-      inlineData: {
-        data: base64Data,
-        mimeType: 'image/png'
-      }
-    });
+    const base64Data = config.baseImage.includes(',') ? config.baseImage.split(',')[1] : config.baseImage;
+    contentsParts.push({ inlineData: { data: base64Data, mimeType: 'image/png' } });
   }
 
   const bgPrompt = config.removeBackground 
-    ? "Isolate the product and place it in a brand new, luxurious studio background." 
-    : "Enhance the overall aesthetic while keeping the original context.";
+    ? "Studio high-end product photography, luxurious background, professional lighting." 
+    : "Enhance lighting and aesthetics.";
 
-  const fullPrompt = `Create a high-end commercial poster image.
-  STYLE: ${config.style}
-  PRODUCT DESCRIPTION: ${enhancedPrompt}
-  BACKGROUND ACTION: ${bgPrompt}
-  QUALITY: High definition, realistic textures, cinematic lighting.
-  Note: Ensure the product remains the central focus of the image.`;
-
-  contentsParts.push({ text: fullPrompt });
+  contentsParts.push({ text: `Style: ${config.style}. Prompt: ${enhancedPrompt}. ${bgPrompt}` });
 
   try {
     const response = await ai.models.generateContent({
       model: 'gemini-2.5-flash-image',
       contents: [{ parts: contentsParts }],
-      config: {
-        imageConfig: {
-          aspectRatio: config.aspectRatio as any
-        }
-      }
+      config: { imageConfig: { aspectRatio: config.aspectRatio as any } }
     });
 
-    // การตรวจสอบ Candidates แบบละเอียดสูงสุดเพื่อแก้ปัญหา TypeScript Error TS18048
-    const responseCandidates = response.candidates;
-    if (!responseCandidates || responseCandidates.length === 0) {
-      throw new Error("API_RETURNED_NO_IMAGE");
-    }
-
-    const firstCandidate = responseCandidates[0];
-    const candidateContent = firstCandidate.content;
-    if (!candidateContent) {
-      throw new Error("API_RETURNED_NO_IMAGE");
-    }
-
-    const candidateParts = candidateContent.parts;
-    if (!candidateParts || candidateParts.length === 0) {
-      throw new Error("API_RETURNED_NO_IMAGE");
-    }
-
-    // วนลูปหา Part ที่เป็นรูปภาพใน InlineData
-    for (const part of candidateParts) {
-      if (part.inlineData && part.inlineData.data) {
-        const data = part.inlineData.data;
-        const mime = part.inlineData.mimeType || 'image/png';
-        return `data:${mime};base64,${data}`;
+    const candidates = response.candidates;
+    if (candidates && candidates[0]?.content?.parts) {
+      for (const part of candidates[0].content.parts) {
+        if (part.inlineData?.data) {
+          return `data:${part.inlineData.mimeType || 'image/png'};base64,${part.inlineData.data}`;
+        }
       }
     }
-
     throw new Error("API_RETURNED_NO_IMAGE");
   } catch (error: any) {
-    console.error("Gemini Generation Error:", error);
-    const msg = error?.message || "";
-    
-    if (msg.includes("429")) throw new Error("QUOTA_EXCEEDED");
-    if (msg.includes("API Key") || msg.includes("MISSING_KEY")) throw new Error("MISSING_KEY");
-    if (msg.includes("safety")) throw new Error("SAFETY_BLOCK");
-    
+    if (error?.message?.includes("Requested entity was not found")) throw new Error("KEY_RESET");
     throw error;
   }
 };
 
 export const hasApiKey = async (): Promise<boolean> => {
-  try {
-    const win = window as any;
-    if (win.aistudio && typeof win.aistudio.hasSelectedApiKey === 'function') {
-      const hasKey = await win.aistudio.hasSelectedApiKey();
-      if (hasKey) return true;
-    }
-  } catch (e) {}
-  return !!process.env.API_KEY;
+  const win = window as any;
+  if (win.aistudio?.hasSelectedApiKey) {
+    try {
+      if (await win.aistudio.hasSelectedApiKey()) return true;
+    } catch (e) {}
+  }
+  return !!getSafeKey();
 };
 
 export const openKeySelector = async () => {
   const win = window as any;
-  if (win.aistudio && typeof win.aistudio.openSelectKey === 'function') {
-    await win.aistudio.openSelectKey();
-    return true;
+  if (win.aistudio?.openSelectKey) {
+    try {
+      await win.aistudio.openSelectKey();
+      return true;
+    } catch (e) {}
   }
+  // หากไม่มี window.aistudio แสดงว่ารันใน environment ปกติที่มี Key ฝังไว้อยู่แล้ว
   return false;
 };

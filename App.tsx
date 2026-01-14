@@ -6,7 +6,6 @@ import {
   Download, 
   History, 
   Settings2, 
-  AlertCircle,
   RefreshCw,
   X,
   Eye,
@@ -14,20 +13,16 @@ import {
   Plus,
   Type,
   Layout,
-  Layers,
   ShieldCheck,
   Wand2,
-  Copy,
   Check,
   Key,
-  ArrowRight,
-  Clock,
   AlertTriangle,
   Eraser,
   Wand,
   ExternalLink
 } from 'lucide-react';
-import { AspectRatio, PosterStyle, GeneratedPoster, GenerationConfig } from './types';
+import { AspectRatio, GeneratedPoster } from './types';
 import { STYLE_PRESETS, ASPECT_RATIOS, LOADING_MESSAGES } from './constants';
 import { generatePosterImage, openKeySelector, generatePosterSlogan, hasApiKey } from './services/gemini';
 
@@ -61,15 +56,13 @@ const App: React.FC = () => {
   
   const canvasRef = useRef<HTMLCanvasElement>(null);
 
-  // ตรวจสอบ Key อย่างต่อเนื่อง
+  // ตรวจสอบความพร้อมของ Key เบื้องต้น
   useEffect(() => {
-    const checkKey = async () => {
+    const initCheck = async () => {
       const selected = await hasApiKey();
       setIsKeySelected(selected);
     };
-    checkKey();
-    const interval = setInterval(checkKey, 2000);
-    return () => clearInterval(interval);
+    initCheck();
   }, []);
 
   useEffect(() => {
@@ -83,11 +76,11 @@ const App: React.FC = () => {
   }, [isGenerating]);
 
   const handleOpenKey = async () => {
-    const success = await openKeySelector();
-    if (success) {
-      setIsKeySelected(true);
-      setError(null);
-    }
+    // ปรับปรุง: พยายามเปิด Key Selector และถือว่าสำเร็จทันที (Optimistic Update)
+    // เพื่อป้องกันปัญหา Race Condition ที่ window.aistudio ยังไม่อัปเดตสถานะ
+    await openKeySelector();
+    setIsKeySelected(true);
+    setError(null);
   };
 
   const handleProductUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -151,7 +144,6 @@ const App: React.FC = () => {
   const toggleLogoMagic = async (id: string) => {
     const logo = logos.find(l => l.id === id);
     if (!logo) return;
-    
     if (logo.isMagicApplied) {
       setLogos(prev => prev.map(l => l.id === id ? { ...l, url: l.originalUrl, isMagicApplied: false } : l));
     } else {
@@ -171,7 +163,7 @@ const App: React.FC = () => {
       const slogans = await generatePosterSlogan(prompt);
       setAiSlogans(slogans);
     } catch (err: any) {
-      if (err.message === "MISSING_KEY") setError("กรุณากดปุ่มสีส้มเพื่อเชื่อมต่อ API Key ก่อนครับ");
+      if (err.message === "MISSING_KEY") handleOpenKey();
       else if (err.message === "QUOTA_EXCEEDED") setError("ขออภัย คิวเต็มชั่วคราว กรุณารอ 1 นาทีครับ");
       else setError("เกิดข้อผิดพลาดในการคิดคำพาดหัว");
     } finally {
@@ -180,8 +172,7 @@ const App: React.FC = () => {
   };
 
   const handleGenerate = async () => {
-    const apiAvailable = await hasApiKey();
-    if (!apiAvailable) {
+    if (!isKeySelected) {
       handleOpenKey();
       return;
     }
@@ -195,7 +186,7 @@ const App: React.FC = () => {
     
     try {
       const result = await generatePosterImage({
-        prompt: prompt || "Product display",
+        prompt: prompt || "Premium product showcase",
         style: STYLE_PRESETS[styleIndex].label as any, 
         aspectRatio,
         highQuality: true,
@@ -216,12 +207,12 @@ const App: React.FC = () => {
       setCurrentPoster(newPoster);
       setHistory(prev => [newPoster, ...prev].slice(0, 10));
     } catch (err: any) {
-      console.error("Generate Error:", err);
-      if (err.message === "QUOTA_EXCEEDED") setError("QUOTA");
-      else if (err.message === "SAFETY_BLOCK") setError("AI ปฏิเสธรูปนี้เนื่องจากขัดต่อกฎความปลอดภัย (ลองเปลี่ยนคำบรรยายดูครับ)");
-      else if (err.message === "MISSING_KEY") setError("กรุณาเชื่อมต่อ API Key ก่อนใช้งานครับ");
-      else if (err.message === "API_RETURNED_NO_IMAGE") setError("AI ไม่ส่งรูปกลับมา (อาจเพราะรูปสินค้าซับซ้อนไป หรือ Prompt ไม่ชัดเจน ลองใหม่ดูครับ)");
-      else setError("เกิดข้อผิดพลาดทางเทคนิค กรุณาลองใหม่");
+      if (err.message === "KEY_RESET") {
+        setIsKeySelected(false);
+        setError("API Key ไม่ถูกต้อง กรุณาเลือกใหม่ครับ");
+        handleOpenKey();
+      } else if (err.message === "QUOTA_EXCEEDED") setError("QUOTA");
+      else setError(err.message || "เกิดข้อผิดพลาดทางเทคนิค");
     } finally {
       setIsGenerating(false);
     }
@@ -269,7 +260,6 @@ const App: React.FC = () => {
       const aspect = logoImg.height / logoImg.width;
       const w = logoBaseSize;
       const h = logoBaseSize * aspect;
-      
       ctx.save();
       if (!visibleLogos[i].isMagicApplied) {
         ctx.shadowColor = "rgba(0,0,0,0.15)";
@@ -299,24 +289,17 @@ const App: React.FC = () => {
           </div>
         </div>
         <div className="flex items-center gap-3">
-          <a 
-            href="https://ai.google.dev/gemini-api/docs/billing" 
-            target="_blank" 
-            rel="noopener noreferrer"
-            className="hidden md:flex items-center gap-1 text-[9px] font-bold text-slate-500 hover:text-white transition-colors"
-          >
+          <a href="https://ai.google.dev/gemini-api/docs/billing" target="_blank" rel="noopener noreferrer" className="hidden md:flex items-center gap-1 text-[9px] font-bold text-slate-500 hover:text-white transition-colors">
             Billing Info <ExternalLink className="w-2.5 h-2.5" />
           </a>
           <button 
             onClick={handleOpenKey}
             className={`flex items-center gap-2 px-5 py-2 rounded-full border transition-all text-[10px] font-black uppercase ${
-              isKeySelected 
-                ? 'bg-green-500/10 border-green-500/30 text-green-400' 
-                : 'bg-orange-500/20 text-orange-400 border-orange-500/50 animate-pulse shadow-lg shadow-orange-500/20'
+              isKeySelected ? 'bg-green-500/10 border-green-500/30 text-green-400' : 'bg-orange-500/20 text-orange-400 border-orange-500/50 animate-pulse'
             }`}
           >
             {isKeySelected ? <ShieldCheck className="w-3.5 h-3.5" /> : <Key className="w-3.5 h-3.5" />}
-            {isKeySelected ? 'Key Connected' : 'Connect Key to Start'}
+            {isKeySelected ? 'Connected' : 'Connect API Key'}
           </button>
         </div>
       </nav>
@@ -345,13 +328,13 @@ const App: React.FC = () => {
               <div className="space-y-2">
                 <label className="text-[10px] font-black text-slate-500 uppercase tracking-widest ml-1 flex justify-between">
                   <span>โลโก้แบรนด์</span>
-                  <span className="text-amber-500 text-[8px] animate-pulse">กดคทาวิเศษเพื่อลบพื้นหลัง</span>
+                  <span className="text-amber-500 text-[8px] animate-pulse">กดคทาเพื่อลบพื้นหลัง</span>
                 </label>
                 <div className="grid grid-cols-4 gap-2">
                   {logos.map(logo => (
                     <div key={logo.id} className={`relative aspect-square rounded-xl border p-2 group transition-all ${logo.isMagicApplied ? 'bg-slate-800 border-amber-500/40' : 'bg-white border-white/10'}`}>
                       <img src={logo.url} className={`w-full h-full object-contain ${logo.visible ? 'opacity-100' : 'opacity-20'}`} />
-                      <div className="absolute inset-0 bg-black/80 opacity-0 group-hover:opacity-100 transition-opacity rounded-xl flex flex-wrap items-center justify-center gap-1">
+                      <div className="absolute inset-0 bg-black/80 opacity-0 group-hover:opacity-100 transition-opacity rounded-xl flex items-center justify-center gap-1">
                         <button onClick={() => toggleLogoVisibility(logo.id)} className="p-1 hover:bg-white/10 rounded-md">
                           {logo.visible ? <Eye className="w-3.5 h-3.5 text-white" /> : <EyeOff className="w-3.5 h-3.5 text-slate-400" />}
                         </button>
@@ -373,30 +356,20 @@ const App: React.FC = () => {
 
               <div className="flex items-center justify-between p-4 bg-white/5 rounded-2xl border border-white/5">
                 <div className="flex items-center gap-3">
-                  <div className="p-2 bg-amber-500/10 rounded-lg">
-                    <Eraser className="w-4 h-4 text-amber-500" />
-                  </div>
+                  <div className="p-2 bg-amber-500/10 rounded-lg"><Eraser className="w-4 h-4 text-amber-500" /></div>
                   <div className="flex flex-col">
                     <span className="text-[10px] font-black text-slate-200 uppercase tracking-widest">Replace Background</span>
                     <span className="text-[8px] text-slate-500 font-bold uppercase">สร้างพื้นหลังใหม่โดย AI</span>
                   </div>
                 </div>
-                <button 
-                  onClick={() => setRemoveBg(!removeBg)}
-                  className={`w-12 h-6 rounded-full transition-all relative ${removeBg ? 'bg-amber-600' : 'bg-slate-700'}`}
-                >
+                <button onClick={() => setRemoveBg(!removeBg)} className={`w-12 h-6 rounded-full transition-all relative ${removeBg ? 'bg-amber-600' : 'bg-slate-700'}`}>
                   <div className={`absolute top-1 w-4 h-4 bg-white rounded-full transition-all ${removeBg ? 'left-7' : 'left-1'}`}></div>
                 </button>
               </div>
 
               <div className="space-y-2">
                 <label className="text-[10px] font-black text-slate-500 uppercase tracking-widest ml-1">รายละเอียดสินค้า (ไทย/Eng)</label>
-                <textarea
-                  value={prompt}
-                  onChange={(e) => setPrompt(e.target.value)}
-                  placeholder="เช่น กาแฟดริปเข้มข้น หอมกลิ่นภูเขา เมืองน่าน..."
-                  className="w-full h-24 bg-slate-900/40 border border-white/10 rounded-2xl p-4 text-sm outline-none focus:ring-2 focus:ring-amber-500/50 transition-all placeholder:text-slate-700"
-                />
+                <textarea value={prompt} onChange={(e) => setPrompt(e.target.value)} placeholder="เช่น กาแฟดริปเข้มข้น หอมกลิ่นภูเขา เมืองน่าน..." className="w-full h-24 bg-slate-900/40 border border-white/10 rounded-2xl p-4 text-sm outline-none focus:ring-2 focus:ring-amber-500/50 transition-all placeholder:text-slate-700" />
               </div>
 
               <div className="bg-amber-500/5 p-4 rounded-2xl border border-amber-500/10 shadow-inner">
@@ -408,7 +381,7 @@ const App: React.FC = () => {
                 </div>
                 <input value={posterText} onChange={e => setPosterText(e.target.value)} className="w-full bg-slate-950 border border-white/5 rounded-xl p-3 text-xs mb-2 outline-none focus:border-amber-500/50 transition-all" placeholder="พิมพ์ข้อความที่ต้องการบนภาพ..." />
                 {aiSlogans.length > 0 && (
-                  <div className="flex flex-col gap-1 mt-2 max-h-32 overflow-y-auto pr-1 scrollbar-hide">
+                  <div className="flex flex-col gap-1 mt-2 max-h-32 overflow-y-auto scrollbar-hide">
                     {aiSlogans.map((s, i) => (
                       <button key={i} onClick={() => copySlogan(s, i)} className="text-[9px] p-2.5 bg-white/5 rounded-lg text-left hover:bg-white/10 flex justify-between items-center group transition-colors">
                         <span className="group-hover:text-amber-500">{s}</span> {copiedIndex === i && <Check className="w-3.5 h-3.5 text-amber-500" />}
@@ -420,39 +393,24 @@ const App: React.FC = () => {
             </div>
           </section>
 
-          <section className="glass rounded-[40px] p-8 border-white/10 space-y-6 shadow-xl">
-            <h3 className="text-[11px] font-black text-amber-500 flex items-center gap-3 uppercase tracking-widest border-b border-white/5 pb-4">
-              <Settings2 className="w-4 h-4" /> 02. สไตล์งานดีไซน์
-            </h3>
-            
+          <section className="glass rounded-[40px] p-8 border-white/10 space-y-6">
+            <h3 className="text-[11px] font-black text-amber-500 flex items-center gap-3 uppercase tracking-widest border-b border-white/5 pb-4"><Settings2 className="w-4 h-4" /> 02. สไตล์งานดีไซน์</h3>
             <div className="grid grid-cols-2 gap-2">
               {STYLE_PRESETS.map((style, idx) => (
-                <button
-                  key={style.id}
-                  onClick={() => setStyleIndex(idx)}
-                  className={`text-[9px] py-3.5 px-2 rounded-xl border font-black uppercase transition-all ${
-                    styleIndex === idx ? 'bg-amber-500 text-slate-950 border-amber-400 shadow-lg shadow-amber-500/20 scale-[1.02]' : 'bg-slate-900/60 border-white/5 text-slate-600 hover:bg-slate-800'
-                  }`}
-                >
-                  {style.label}
-                </button>
+                <button key={style.id} onClick={() => setStyleIndex(idx)} className={`text-[9px] py-3.5 px-2 rounded-xl border font-black uppercase transition-all ${styleIndex === idx ? 'bg-amber-500 text-slate-950 border-amber-400' : 'bg-slate-900/60 border-white/5 text-slate-600 hover:bg-slate-800'}`}>{style.label}</button>
               ))}
             </div>
-
             <div className="flex gap-2 overflow-x-auto pb-1 scrollbar-hide">
               {ASPECT_RATIOS.map(ratio => (
-                <button key={ratio.id} onClick={() => setAspectRatio(ratio.id as any)} className={`px-4 py-2.5 rounded-xl border text-[9px] font-black shrink-0 transition-all ${aspectRatio === ratio.id ? 'bg-white text-black border-white shadow-lg' : 'bg-slate-900/80 text-slate-500 border-white/5 hover:text-slate-300'}`}>{ratio.id}</button>
+                <button key={ratio.id} onClick={() => setAspectRatio(ratio.id as any)} className={`px-4 py-2.5 rounded-xl border text-[9px] font-black shrink-0 transition-all ${aspectRatio === ratio.id ? 'bg-white text-black border-white' : 'bg-slate-900/80 text-slate-500 border-white/5'}`}>{ratio.id}</button>
               ))}
             </div>
           </section>
 
           {error && (
             <div className="p-5 bg-red-500/10 border border-red-500/20 text-red-400 rounded-3xl text-[10px] font-bold animate-pulse flex flex-col gap-3">
-              <div className="flex gap-2">
-                <AlertTriangle className="w-4 h-4 shrink-0" />
-                <span>{error === "QUOTA" ? "ขออภัย คิวแน่นมากครับ กรุณารอ 1 นาทีครับ" : error}</span>
-              </div>
-              <button onClick={handleGenerate} className="bg-red-500 text-white py-2.5 rounded-xl text-[9px] flex items-center justify-center gap-2 font-black uppercase tracking-widest hover:bg-red-600 transition-colors shadow-lg"><RefreshCw className="w-3.5 h-3.5" /> ลองใหม่อีกครั้ง</button>
+              <div className="flex gap-2"><AlertTriangle className="w-4 h-4" /><span>{error === "QUOTA" ? "คิวแน่นมากครับ กรุณารอ 1 นาทีครับ" : error}</span></div>
+              <button onClick={handleGenerate} className="bg-red-500 text-white py-2.5 rounded-xl text-[9px] font-black uppercase shadow-lg hover:bg-red-600"><RefreshCw className="w-3.5 h-3.5 inline mr-2" /> ลองใหม่อีกครั้ง</button>
             </div>
           )}
 
@@ -460,16 +418,11 @@ const App: React.FC = () => {
             onClick={handleGenerate}
             disabled={isGenerating}
             className={`w-full py-6 rounded-[35px] flex items-center justify-center gap-4 font-black uppercase transition-all text-[12px] tracking-[0.2em] shadow-2xl relative overflow-hidden group ${
-              isGenerating 
-                ? 'bg-slate-900 text-slate-600 cursor-not-allowed' 
-                : !isKeySelected 
-                  ? 'bg-orange-600 text-white animate-bounce shadow-orange-600/30' 
-                  : 'bg-gradient-to-r from-amber-600 to-orange-600 text-white shadow-orange-600/30 active:scale-95'
+              isGenerating ? 'bg-slate-900 text-slate-600' : 'bg-gradient-to-r from-amber-600 to-orange-600 text-white'
             }`}
           >
-            {isGenerating ? <RefreshCw className="animate-spin w-5 h-5" /> : !isKeySelected ? <Key className="w-5 h-5" /> : <Sparkles className="w-5 h-5" />}
-            <span className="relative z-10">{isGenerating ? "AI กำลังวาดภาพ..." : !isKeySelected ? "คลิกเพื่อเชื่อมต่อ Key" : "สร้างโปสเตอร์เดี๋ยวนี้"}</span>
-            {!isGenerating && isKeySelected && <div className="absolute inset-0 bg-white/10 translate-x-[-100%] group-hover:translate-x-[100%] transition-transform duration-1000"></div>}
+            {isGenerating ? <RefreshCw className="animate-spin w-5 h-5" /> : <Sparkles className="w-5 h-5" />}
+            <span className="relative z-10">{isGenerating ? "AI กำลังวาดภาพ..." : "สร้างโปสเตอร์เดี๋ยวนี้"}</span>
           </button>
         </div>
 
@@ -477,35 +430,29 @@ const App: React.FC = () => {
           <div className="glass rounded-[50px] p-8 min-h-[680px] flex flex-col items-center justify-center border-white/5 relative overflow-hidden shadow-2xl">
             {isGenerating ? (
               <div className="text-center space-y-8 z-10 animate-in fade-in duration-500">
-                <div className="relative">
-                  <div className="w-20 h-20 border-4 border-amber-500/10 border-t-amber-500 rounded-full animate-spin mx-auto shadow-2xl shadow-amber-500/20"></div>
-                  <Sparkles className="absolute inset-0 m-auto w-6 h-6 text-amber-500 animate-pulse" />
-                </div>
+                <div className="w-20 h-20 border-4 border-amber-500/10 border-t-amber-500 rounded-full animate-spin mx-auto shadow-amber-500/20"></div>
                 <div className="space-y-3">
                   <h3 className="text-xl font-black text-white italic tracking-widest">{LOADING_MESSAGES[loadingMsgIndex]}</h3>
-                  <p className="text-[10px] text-slate-600 font-black uppercase tracking-[0.4em] opacity-50">Powered by Gemini 2.5 Flash</p>
+                  <p className="text-[10px] text-slate-600 font-black uppercase tracking-[0.4em]">Powered by Gemini 2.5 Flash</p>
                 </div>
               </div>
             ) : currentPoster ? (
               <div className="w-full flex flex-col items-center gap-10 animate-in fade-in zoom-in-95 duration-1000">
-                <div className="relative max-w-full shadow-[0_50px_100px_rgba(0,0,0,0.8)] rounded-[45px] overflow-hidden border border-white/10 bg-black group">
+                <div className="relative max-w-full shadow-2xl rounded-[45px] overflow-hidden border border-white/10 bg-black">
                   <canvas ref={canvasRef} className="hidden" />
-                  <img src={currentPoster.url} className="max-h-[580px] w-auto transition-transform duration-700 group-hover:scale-[1.02]" />
+                  <img src={currentPoster.url} className="max-h-[580px] w-auto transition-transform duration-700" />
                   <div className="absolute top-8 right-8 flex gap-4 drop-shadow-2xl">
                     {logos.filter(l => l.visible).map(l => (
-                      <img key={l.id} src={l.url} className="w-16 md:w-24 h-auto object-contain animate-in slide-in-from-right-10 duration-500" />
+                      <img key={l.id} src={l.url} className="w-16 md:w-24 h-auto object-contain" />
                     ))}
                   </div>
-                  <div className="absolute inset-x-0 bottom-0 bg-gradient-to-t from-black/80 to-transparent p-10 opacity-0 group-hover:opacity-100 transition-opacity">
-                    <p className="text-[10px] font-black uppercase text-amber-500 tracking-widest">Preview Design</p>
-                  </div>
                 </div>
-                <button onClick={downloadImage} className="group bg-white text-black px-16 py-5 rounded-[30px] font-black text-[12px] uppercase tracking-[0.3em] flex items-center gap-4 hover:bg-amber-400 hover:scale-105 active:scale-95 transition-all shadow-[0_20px_40px_rgba(255,255,255,0.1)]">
-                  <Download className="w-5 h-5 group-hover:translate-y-1 transition-transform" /> Save Final HD Image
+                <button onClick={downloadImage} className="bg-white text-black px-16 py-5 rounded-[30px] font-black text-[12px] uppercase tracking-[0.3em] flex items-center gap-4 hover:bg-amber-400 transition-all shadow-xl">
+                  <Download className="w-5 h-5" /> Save Final HD Image
                 </button>
               </div>
             ) : (
-              <div className="text-center space-y-8 opacity-20 hover:opacity-40 transition-opacity cursor-default">
+              <div className="text-center space-y-8 opacity-20 hover:opacity-40 transition-opacity">
                 <div className="relative mx-auto w-32 h-32 flex items-center justify-center">
                    <ImageIcon className="w-24 h-24 text-slate-700" />
                    <div className="absolute inset-0 border-2 border-dashed border-slate-800 rounded-full animate-[spin_20s_linear_infinite]"></div>
@@ -519,16 +466,13 @@ const App: React.FC = () => {
           </div>
 
           {history.length > 0 && (
-            <div className="glass rounded-[40px] p-8 border-white/5 shadow-2xl">
+            <div className="glass rounded-[40px] p-8 border-white/5">
               <h4 className="text-[11px] font-black text-slate-500 uppercase mb-6 flex items-center gap-3 tracking-[0.2em]"><History className="w-4 h-4 text-amber-500" /> Recent Creations</h4>
               <div className="flex gap-5 overflow-x-auto pb-4 scrollbar-hide">
                 {history.map(item => (
-                  <div key={item.id} onClick={() => setCurrentPoster(item)} className="relative shrink-0 group">
-                     <div className={`relative rounded-2xl overflow-hidden border-2 transition-all duration-500 cursor-pointer ${currentPoster?.id === item.id ? 'border-amber-500 shadow-lg shadow-amber-500/30 scale-105' : 'border-white/5 opacity-40 hover:opacity-100'}`}>
+                  <div key={item.id} onClick={() => setCurrentPoster(item)} className="relative shrink-0 cursor-pointer">
+                     <div className={`rounded-2xl overflow-hidden border-2 transition-all ${currentPoster?.id === item.id ? 'border-amber-500 shadow-lg scale-105' : 'border-white/5 opacity-40 hover:opacity-100'}`}>
                         <img src={item.url} className="h-32 w-auto object-cover" />
-                        <div className="absolute inset-0 bg-black/40 opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center">
-                          <Eye className="w-6 h-6 text-white" />
-                        </div>
                      </div>
                   </div>
                 ))}
@@ -538,20 +482,9 @@ const App: React.FC = () => {
         </div>
       </main>
 
-      <footer className="p-12 text-center">
-        <div className="flex items-center justify-center gap-4 mb-4 opacity-40">
-           <div className="h-[1px] w-12 bg-slate-800"></div>
-           <p className="text-[10px] font-black uppercase tracking-[0.5em] text-slate-400">AI Poster Studio Pro</p>
-           <div className="h-[1px] w-12 bg-slate-800"></div>
-        </div>
+      <footer className="p-12 text-center opacity-40">
         <p className="text-[8px] text-slate-700 font-bold uppercase tracking-[0.2em]">Designed for OTOP Entrepreneurs | Nan Innovation Hub</p>
       </footer>
-
-      <style dangerouslySetInnerHTML={{ __html: `
-        .scrollbar-hide::-webkit-scrollbar { display: none; }
-        @keyframes pulse-soft { 0%, 100% { opacity: 1; } 50% { opacity: 0.7; } }
-        .animate-pulse-soft { animation: pulse-soft 3s ease-in-out infinite; }
-      ` }} />
     </div>
   );
 };
