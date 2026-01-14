@@ -1,4 +1,3 @@
-
 import { GoogleGenAI, Type } from "@google/genai";
 import { GenerationConfig } from "../types";
 
@@ -77,15 +76,13 @@ export const generatePosterImage = async (config: GenerationConfig): Promise<str
       }
     });
 
-    // แก้ไข Error TS2532: เพิ่มการตรวจสอบ candidates และ content?.parts อย่างปลอดภัย
-    const candidates = response.candidates;
-    if (candidates && candidates.length > 0) {
-      const firstCandidateParts = candidates[0].content?.parts;
-      if (firstCandidateParts) {
-        for (const part of firstCandidateParts) {
-          if (part.inlineData?.data) {
-            return `data:image/png;base64,${part.inlineData.data}`;
-          }
+    // แก้ไข Error TS2532: ใช้ optional chaining ประสิทธิภาพสูงเพื่อให้ TypeScript build ผ่าน
+    const firstCandidateParts = response.candidates?.[0]?.content?.parts;
+    
+    if (firstCandidateParts) {
+      for (const part of firstCandidateParts) {
+        if (part.inlineData?.data) {
+          return `data:image/png;base64,${part.inlineData.data}`;
         }
       }
     }
