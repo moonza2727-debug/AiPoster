@@ -2,10 +2,13 @@
 import { GoogleGenAI, Type } from "@google/genai";
 import { GenerationConfig } from "../types";
 
-// ใช้การดึง API Client แบบตรงไปตรงมาตามกฎ
-// Assume ว่า process.env.API_KEY ถูกเซตมาให้แล้วในระบบ Hosting
 const getAIClient = () => {
   const apiKey = process.env.API_KEY;
+  
+  if (!apiKey || apiKey === "") {
+    console.error("❌ ไม่พบ API_KEY: โปรดตรวจสอบว่าคุณได้ตั้งค่าใน Vercel และกด Redeploy แล้ว");
+  }
+  
   return new GoogleGenAI({ apiKey: apiKey as string });
 };
 

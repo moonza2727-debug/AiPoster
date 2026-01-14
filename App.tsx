@@ -43,7 +43,6 @@ const App: React.FC = () => {
   
   const canvasRef = useRef<HTMLCanvasElement>(null);
 
-  // ตรวจสอบว่ารันอยู่ใน AI Studio หรือไม่
   useEffect(() => {
     if ((window as any).aistudio) {
       setIsAiStudio(true);
@@ -103,8 +102,7 @@ const App: React.FC = () => {
       const suggestions = await generatePosterSlogan(prompt);
       setAiSlogans(suggestions);
     } catch (e: any) {
-      console.error("Slogan fail:", e);
-      setError("ไม่สามารถขอสโลแกนได้ กรุณาตรวจสอบ API_KEY");
+      setError("ไม่พบ API Key: โปรด Redeploy บน Vercel");
     } finally {
       setIsSloganLoading(false);
     }
@@ -112,14 +110,11 @@ const App: React.FC = () => {
 
   const handleGenerate = async () => {
     setError(null);
-
     if (!prompt.trim() && !productImage) {
       setError("กรุณาใส่ชื่อสินค้า หรืออัปโหลดรูปภาพสินค้า");
       return;
     }
-
     setIsGenerating(true);
-
     try {
       const result = await generatePosterImage({
         prompt: prompt || "Premium product",
@@ -143,8 +138,7 @@ const App: React.FC = () => {
       setCurrentPoster(newPoster);
       setHistory(prev => [newPoster, ...prev].slice(0, 10));
     } catch (err: any) {
-      console.error("Generate error:", err);
-      setError("เกิดข้อผิดพลาด: โปรดตรวจสอบว่าคุณได้กด Redeploy ใน Vercel หลังจากตั้งค่า Environment Variable แล้วหรือยัง?");
+      setError("❌ ไม่พบ API Key: คุณต้องกดปุ่ม 'Redeploy' ในหน้า Vercel เพื่อให้ค่าที่ตั้งไว้ทำงาน");
     } finally {
       setIsGenerating(false);
     }
@@ -155,16 +149,13 @@ const App: React.FC = () => {
     const canvas = canvasRef.current;
     const ctx = canvas.getContext('2d');
     if (!ctx) return;
-
     const mainImg = new Image();
     mainImg.crossOrigin = "anonymous";
     mainImg.src = currentPoster.url;
-    
     await new Promise(r => mainImg.onload = r);
     canvas.width = mainImg.width;
     canvas.height = mainImg.height;
     ctx.drawImage(mainImg, 0, 0);
-
     const logoSize = canvas.width * 0.15;
     for (let i = 0; i < logos.length; i++) {
       const logoImg = new Image();
@@ -173,7 +164,6 @@ const App: React.FC = () => {
       const h = logoSize * (logoImg.height / logoImg.width);
       ctx.drawImage(logoImg, canvas.width - (logoSize + 40), 40 + (i * (h + 20)), logoSize, h);
     }
-
     if (posterText) {
       ctx.font = `bold ${canvas.width * 0.07}px Prompt`;
       ctx.fillStyle = 'white';
@@ -182,7 +172,6 @@ const App: React.FC = () => {
       ctx.shadowBlur = 15;
       ctx.fillText(posterText, canvas.width / 2, canvas.height - (canvas.height * 0.12));
     }
-
     const link = document.createElement('a');
     link.download = `ai-poster-${Date.now()}.png`;
     link.href = canvas.toDataURL('image/png');
