@@ -1,10 +1,13 @@
 
 export enum AspectRatio {
   SQUARE = '1:1',
-  PORTRAIT = '3:4',
-  LANDSCAPE = '4:3',
+  PORTRAIT_IG = '4:5',
+  PORTRAIT_STD = '3:4',
+  PORTRAIT_TALL = '2:3',
   MOBILE = '9:16',
-  WIDESCREEN = '16:9'
+  LANDSCAPE_STD = '4:3',
+  LANDSCAPE_WIDE = '16:9',
+  ULTRAWIDE = '21:9'
 }
 
 export enum PosterStyle {
@@ -32,8 +35,8 @@ export interface GenerationConfig {
   style: PosterStyle;
   aspectRatio: AspectRatio;
   highQuality: boolean;
-  baseImage?: string; // Base64 product image
+  baseImage?: string;
   removeBackground?: boolean;
   includeLogo?: boolean;
-  posterText?: string; // New: Text/Keywords for AI to render
+  posterText?: string;
 }

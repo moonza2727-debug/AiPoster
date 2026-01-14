@@ -1,17 +1,43 @@
 
-import React from 'react';
+import { PosterStyle } from './types';
 
 export const STYLE_PRESETS = [
-  { id: 'S1', label: 'Minimal (เรียบง่าย)', prompt: 'Minimalist product photography, clean solid background, soft studio lighting, high-end, no text' },
-  { id: 'S2', label: 'Luxury (หรูหรา)', prompt: 'Luxury product showcase, silk and gold accents, dramatic lighting, high-end look, no text' },
-  { id: 'S3', label: 'Nature (ธรรมชาติ)', prompt: 'Natural organic setting, wooden table, sunlight through leaves, eco-friendly vibe, no text' },
-  { id: 'S4', label: 'Bright (สดใส)', prompt: 'Vibrant pop colors, energetic flat lay composition, bright and cheerful, no text' },
-  { id: 'S5', label: 'Dark (พรีเมียมเข้ม)', prompt: 'Dark atmospheric background, spotlight on product, mysterious and premium, no text' },
-  { id: 'S6', label: 'Thai Modern (ไทยโมเดิร์น)', prompt: 'Modern Thai subtle patterns, warm tones, elegant cultural background, no text' }
+  { 
+    id: 'S1', 
+    label: PosterStyle.OTOP_PREMIUM, 
+    prompt: 'Premium contemporary Lanna graphic art, dark teal and emerald background, stylized golden Thai clouds, elegant Lanna ornaments, soft glowing particles' 
+  },
+  { 
+    id: 'S2', 
+    label: PosterStyle.TRADITIONAL, 
+    prompt: 'Modernized Wat Phumin style mural art elements, indigo and gold color palette, refined traditional Nan textile textures, clean contemporary layout' 
+  },
+  { 
+    id: 'S3', 
+    label: PosterStyle.MODERN_MINIMAL, 
+    prompt: 'Clean architectural Lanna design, soft neutral shadows, off-white and gold accents, minimalist but rich in detail' 
+  },
+  { 
+    id: 'S4', 
+    label: PosterStyle.NATURE_LUXURY, 
+    prompt: 'Dreamy misty Nan mountains (Doi Samer Dao vibe), floating emerald leaves, natural morning golden light, premium organic atmosphere' 
+  },
+  { 
+    id: 'S5', 
+    label: PosterStyle.LANNA_GOLD, 
+    prompt: 'Royal Lanna prestige, dark obsidian background, heavy gold leaf explosion, floating gold dust, majestic and high-end' 
+  },
+  { 
+    id: 'S6', 
+    label: PosterStyle.MINIMAL_KOREA, 
+    prompt: 'Clean bright lifestyle studio, trendy pastel tones, soft diffuse lighting, modern airy aesthetic' 
+  }
 ];
 
 export const ASPECT_RATIOS = [
-  { id: '1:1', label: '1:1 (สี่เหลี่ยม)', class: 'aspect-square' },
-  { id: '3:4', label: '3:4 (แนวตั้ง)', class: 'aspect-[3/4]' },
-  { id: '9:16', label: '9:16 (สตอรี่)', class: 'aspect-[9/16]' }
+  { id: '1:1', label: '1:1 (จัตุรัส)' },
+  { id: '4:5', label: '4:5 (FB/IG)' },
+  { id: '3:4', label: '3:4 (มาตรฐาน)' },
+  { id: '9:16', label: '9:16 (Stories)' },
+  { id: '16:9', label: '16:9 (แนวนอน)' }
 ];

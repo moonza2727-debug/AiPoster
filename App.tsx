@@ -2,10 +2,10 @@
 import React, { useState, useRef, useEffect } from 'react';
 import { 
   Sparkles, Image as ImageIcon, Download, RefreshCw, X, Plus,
-  Rocket, Zap, Layout, Wand2, Scissors
+  Rocket, Layout, Wand2, Scissors, CheckCircle2
 } from 'lucide-react';
 import { removeBackground } from "@imgly/background-removal";
-import { AspectRatio, GeneratedPoster } from './types';
+import { AspectRatio, GeneratedPoster, PosterStyle } from './types';
 import { STYLE_PRESETS, ASPECT_RATIOS } from './constants';
 import { generatePosterImage, testConnection } from './services/gemini';
 
@@ -13,12 +13,11 @@ interface Logo { id: string; url: string; }
 
 const App: React.FC = () => {
   const [prompt, setPrompt] = useState('');
-  const [posterText, setPosterText] = useState('');
+  const [posterText, setPosterText] = useState('OTOP พรีเมียม');
   const [styleIndex, setStyleIndex] = useState(0);
   const [aspectRatio, setAspectRatio] = useState<AspectRatio>(AspectRatio.SQUARE);
   const [isGenerating, setIsGenerating] = useState(false);
   const [isRemovingBg, setIsRemovingBg] = useState(false);
-  const [keyStatus, setKeyStatus] = useState<'testing' | 'valid' | 'invalid' | 'none'>('none');
   const [productImage, setProductImage] = useState<string | null>(null);
   const [logos, setLogos] = useState<Logo[]>([]);
   const [currentPoster, setCurrentPoster] = useState<GeneratedPoster | null>(null);
@@ -26,28 +25,15 @@ const App: React.FC = () => {
   
   const canvasRef = useRef<HTMLCanvasElement>(null);
 
-  const checkKey = async () => {
-    setKeyStatus('testing');
-    try {
-      const res = await testConnection();
-      setKeyStatus(res.valid ? 'valid' : 'invalid');
-    } catch {
-      setKeyStatus('invalid');
-    }
-  };
-
-  useEffect(() => { checkKey(); }, []);
+  useEffect(() => {
+    testConnection().catch(err => console.error("Initial check failed", err));
+  }, []);
 
   const handleRemoveBackground = async () => {
     if (!productImage) return;
     setIsRemovingBg(true);
     try {
-      // imgly background removal works with images and returns a blob
-      const blob = await removeBackground(productImage, {
-        progress: (key: string, current: number, total: number) => {
-          console.log(`Processing: ${key} ${current}/${total}`);
-        }
-      });
+      const blob = await removeBackground(productImage);
       const reader = new FileReader();
       reader.onloadend = () => {
         setProductImage(reader.result as string);
@@ -56,21 +42,21 @@ const App: React.FC = () => {
       reader.readAsDataURL(blob);
     } catch (err) {
       console.error(err);
-      alert("ไม่สามารถตัดพื้นหลังได้ในขณะนี้ กรุณาลองใหม่ครับ");
+      alert("ขออภัย ระบบลบพื้นหลังขัดข้อง กรุณาลองใหม่ครับ");
       setIsRemovingBg(false);
     }
   };
 
   const handleGenerate = async () => {
-    if (!prompt.trim() && !productImage) {
-      alert("กรุณาอัปโหลดรูปสินค้าหรือพิมพ์รายละเอียดก่อนครับ");
+    if (!productImage && !prompt.trim()) {
+      alert("กรุณาอัปโหลดรูปสินค้าหรือพิมพ์รายละเอียดฉากที่ต้องการครับ");
       return;
     }
     setIsGenerating(true);
     try {
       const result = await generatePosterImage({
-        prompt: prompt || "premium product background",
-        style: STYLE_PRESETS[styleIndex].label as any,
+        prompt,
+        style: STYLE_PRESETS[styleIndex].label,
         aspectRatio,
         highQuality: true,
         posterText
@@ -79,141 +65,188 @@ const App: React.FC = () => {
         id: Date.now().toString(),
         url: result,
         prompt,
-        style: STYLE_PRESETS[styleIndex].label as any,
+        style: STYLE_PRESETS[styleIndex].label,
         aspectRatio,
         timestamp: Date.now()
       });
-    } catch (err: any) {
-      alert("เกิดข้อผิดพลาดในการสร้างฉากหลัง กรุณาลองใหม่ครับ");
+    } catch (err) {
+      alert("เกิดข้อผิดพลาดในการสร้างภาพ กรุณาลองใหม่อีกครั้งครับ");
     } finally {
       setIsGenerating(false);
     }
   };
 
+  const handleDownload = () => {
+    if (!previewUrl) return;
+    const link = document.createElement('a');
+    link.download = `OTOP-Poster-${Date.now()}.png`;
+    link.href = previewUrl;
+    link.click();
+  };
+
   const drawToCanvas = async () => {
     if (!currentPoster || !canvasRef.current) return null;
     const canvas = canvasRef.current;
-    const ctx = canvas.getContext('2d');
+    const ctx = canvas.getContext('2d', { willReadFrequently: true });
     if (!ctx) return null;
 
     const bgImg = new Image();
     bgImg.crossOrigin = "anonymous";
     bgImg.src = currentPoster.url;
-    await new Promise((resolve) => {
-      bgImg.onload = resolve;
-      bgImg.onerror = resolve;
-    });
+    await new Promise((r) => bgImg.onload = r);
 
     canvas.width = bgImg.width;
     canvas.height = bgImg.height;
-    ctx.drawImage(bgImg, 0, 0, canvas.width, canvas.height);
 
+    // 1. Draw Background
+    ctx.drawImage(bgImg, 0, 0, canvas.width, canvas.height);
+    
+    // 2. Add a subtle dark gradient at the bottom for grounding
+    const bottomGrad = ctx.createLinearGradient(0, canvas.height * 0.6, 0, canvas.height);
+    bottomGrad.addColorStop(0, 'transparent');
+    bottomGrad.addColorStop(1, 'rgba(0,0,0,0.5)');
+    ctx.fillStyle = bottomGrad;
+    ctx.fillRect(0, canvas.height * 0.6, canvas.width, canvas.height * 0.4);
+
+    // 3. Draw Product Image (Sitting on the floor line)
     if (productImage) {
       const prodImg = new Image();
       prodImg.src = productImage;
       await new Promise(r => prodImg.onload = r);
       
-      const maxProdWidth = canvas.width * 0.75;
-      const maxProdHeight = canvas.height * 0.65;
-      const ratio = Math.min(maxProdWidth / prodImg.width, maxProdHeight / prodImg.height);
-      const w = prodImg.width * ratio;
-      const h = prodImg.height * ratio;
-      
-      ctx.shadowColor = "rgba(0,0,0,0.3)";
+      const scale = Math.min((canvas.width * 0.7) / prodImg.width, (canvas.height * 0.7) / prodImg.height);
+      const w = prodImg.width * scale;
+      const h = prodImg.height * scale;
+      const x = (canvas.width - w) / 2;
+      // Position the base of the product at 85% height to look grounded
+      const y = (canvas.height * 0.88) - h;
+
+      ctx.save();
+      // Ground Shadow (Contact Shadow)
+      ctx.beginPath();
+      ctx.ellipse(canvas.width / 2, canvas.height * 0.88, w * 0.4, h * 0.05, 0, 0, Math.PI * 2);
+      ctx.fillStyle = "rgba(0,0,0,0.6)";
+      ctx.shadowBlur = 20;
+      ctx.shadowColor = "black";
+      ctx.fill();
+
+      // Product Shadow (Ambient Occlusion)
       ctx.shadowBlur = 40;
-      ctx.shadowOffsetY = 20;
-      
-      ctx.drawImage(prodImg, (canvas.width - w) / 2, (canvas.height - h) / 1.7, w, h);
-      ctx.shadowBlur = 0;
-      ctx.shadowOffsetY = 0;
-    }
-
-    const padding = canvas.width * 0.05;
-
-    if (posterText.trim()) {
-      const fontSize = canvas.width * 0.085;
-      ctx.font = `bold ${fontSize}px "Prompt", sans-serif`;
-      ctx.shadowColor = "rgba(0,0,0,0.9)";
-      ctx.shadowBlur = 30;
+      ctx.shadowColor = "rgba(0,0,0,0.4)";
       ctx.shadowOffsetY = 10;
-      ctx.fillStyle = "#ffffff";
-      ctx.textAlign = "center";
-      ctx.fillText(posterText, canvas.width / 2, canvas.height - (padding * 2.5));
-      ctx.shadowBlur = 0;
-      ctx.shadowOffsetY = 0;
+      ctx.drawImage(prodImg, x, y, w, h);
+      ctx.restore();
     }
 
-    const logoSize = canvas.width * 0.12;
-    let logoXOffset = padding;
+    // 4. Draw Footer Text (Moved to bottom to avoid Logo)
+    if (posterText.trim()) {
+      ctx.save();
+      const centerY = canvas.height * 0.92;
+      const fontSize = canvas.width * 0.07;
+      
+      // Decorative bar behind text
+      ctx.fillStyle = "rgba(0, 0, 0, 0.6)";
+      const barH = fontSize * 1.5;
+      ctx.fillRect(0, centerY - barH/2, canvas.width, barH);
+      
+      // Top/Bottom Accent lines for the text bar
+      ctx.strokeStyle = "rgba(251, 191, 36, 0.5)";
+      ctx.lineWidth = 2;
+      ctx.beginPath();
+      ctx.moveTo(0, centerY - barH/2);
+      ctx.lineTo(canvas.width, centerY - barH/2);
+      ctx.moveTo(0, centerY + barH/2);
+      ctx.lineTo(canvas.width, centerY + barH/2);
+      ctx.stroke();
+
+      ctx.font = `700 ${fontSize}px "Prompt"`;
+      ctx.textAlign = "center";
+      
+      // Gradient Text for visibility
+      const tGrad = ctx.createLinearGradient(0, centerY - fontSize/2, 0, centerY + fontSize/2);
+      tGrad.addColorStop(0, '#ffffff');
+      tGrad.addColorStop(1, '#fbbf24');
+      
+      ctx.shadowBlur = 8;
+      ctx.shadowColor = "black";
+      ctx.fillStyle = tGrad;
+      ctx.fillText(posterText, canvas.width / 2, centerY + fontSize/3);
+      ctx.restore();
+    }
+
+    // 5. Draw Logos (Top Right - remains safe as text is now at the bottom)
+    const logoSize = canvas.width * 0.16;
+    let lX = canvas.width - logoSize - (canvas.width * 0.05);
+    let lY = canvas.height * 0.05;
+
     for (const logo of logos) {
-      const logoImg = new Image();
-      logoImg.src = logo.url;
-      await new Promise(r => logoImg.onload = r);
-      const h = logoSize * (logoImg.height / logoImg.width);
-      ctx.drawImage(logoImg, canvas.width - (logoSize + logoXOffset), padding, logoSize, h);
-      logoXOffset += logoSize + 20;
+      const lImg = new Image();
+      lImg.src = logo.url;
+      await new Promise(r => lImg.onload = r);
+      ctx.save();
+      ctx.beginPath();
+      ctx.arc(lX + logoSize/2, lY + logoSize/2, logoSize/2, 0, Math.PI * 2);
+      ctx.clip();
+      ctx.fillStyle = "white";
+      ctx.fill();
+      ctx.drawImage(lImg, lX, lY, logoSize, logoSize);
+      ctx.restore();
+      
+      ctx.strokeStyle = "white";
+      ctx.lineWidth = 3;
+      ctx.stroke();
+      lX -= (logoSize + 15);
     }
 
     return canvas.toDataURL('image/png');
-  };
-
-  const handleDownload = async () => {
-    const dataUrl = await drawToCanvas();
-    if (dataUrl) {
-      const link = document.createElement('a');
-      link.download = `AI-Poster-${Date.now()}.png`;
-      link.href = dataUrl;
-      link.click();
-    }
   };
 
   useEffect(() => {
     if (currentPoster) {
       const timer = setTimeout(() => {
         drawToCanvas().then(url => setPreviewUrl(url));
-      }, 300);
+      }, 400);
       return () => clearTimeout(timer);
     }
-  }, [currentPoster, posterText, logos, productImage]);
+  }, [currentPoster, posterText, logos, productImage, styleIndex]);
 
   return (
-    <div className="min-h-screen bg-[#010204] text-slate-200 flex flex-col font-['Prompt'] text-sm">
-      <nav className="border-b border-white/5 bg-black/60 backdrop-blur-2xl sticky top-0 z-50 px-6 py-3 flex items-center justify-between">
-        <div className="flex items-center gap-3">
-          <div className="bg-amber-500 p-1.5 rounded-lg">
-            <Sparkles className="w-4 h-4 text-black" />
+    <div className="min-h-screen bg-[#02050a] text-slate-200 flex flex-col font-['Prompt']">
+      <header className="border-b border-white/5 bg-black/40 backdrop-blur-3xl sticky top-0 z-50 px-8 py-4 flex items-center justify-between">
+        <div className="flex items-center gap-4">
+          <div className="bg-gradient-to-br from-amber-400 to-amber-600 p-2.5 rounded-2xl shadow-lg">
+            <Sparkles className="w-6 h-6 text-black" />
           </div>
           <div>
-            <h1 className="text-lg font-bold tracking-tight uppercase italic leading-none">POSTER <span className="text-amber-500">PRO</span></h1>
-            <p className="text-[8px] text-slate-500 font-bold tracking-widest uppercase">ระบบสตูดิโอ AI ครบวงจร</p>
+            <h1 className="text-2xl font-black italic text-white tracking-tighter">OTOP <span className="text-amber-500">PRO</span></h1>
+            <p className="text-[10px] text-amber-500/50 font-bold uppercase tracking-[0.3em]">AI Creative Studio</p>
           </div>
         </div>
-        
-        <div className={`px-3 py-1 rounded-full border text-[9px] font-bold flex items-center gap-2 ${
-          keyStatus === 'valid' ? 'bg-amber-500/5 border-amber-500/20 text-amber-500' : 'bg-slate-500/5 border-slate-500/20 text-slate-500'
-        }`}>
-          {keyStatus === 'valid' ? <Zap className="w-3 h-3" /> : <Scissors className="w-3 h-3" />}
-          {keyStatus === 'valid' ? 'AI SMART MODE' : 'READY TO CUT'}
+        <div className="hidden md:flex items-center gap-4">
+           <div className="w-2 h-2 bg-emerald-500 rounded-full animate-pulse"></div>
+           <span className="text-[10px] font-bold text-slate-500 tracking-widest uppercase">Engine Ready</span>
         </div>
-      </nav>
+      </header>
 
-      <main className="flex-1 container mx-auto p-4 grid lg:grid-cols-12 gap-6 overflow-hidden max-w-7xl">
-        <div className="lg:col-span-4 space-y-4 h-full overflow-y-auto pr-1 custom-scrollbar pb-10">
-          <div className="bg-white/[0.03] border border-white/5 rounded-[24px] p-5 space-y-5 backdrop-blur-xl">
+      <main className="flex-1 container mx-auto p-6 grid lg:grid-cols-12 gap-8 max-w-7xl">
+        {/* Controls Section */}
+        <div className="lg:col-span-4 space-y-6 overflow-y-auto pr-2 custom-scrollbar pb-10">
+          <div className="bg-slate-900/40 border border-white/10 rounded-[40px] p-8 space-y-8 shadow-3xl backdrop-blur-xl">
             
-            {/* Logo Section */}
-            <div className="space-y-2">
-              <label className="text-[9px] font-bold text-amber-500 uppercase tracking-widest flex items-center gap-2">
-                <div className="w-1 h-1 bg-amber-500 rounded-full"></div> โลโก้แบรนด์
+            <section className="space-y-4">
+              <label className="text-[11px] font-bold text-amber-500 uppercase tracking-widest flex items-center gap-2">
+                <CheckCircle2 className="w-4 h-4" /> โลโก้แบรนด์
               </label>
-              <div className="flex flex-wrap gap-2">
+              <div className="flex flex-wrap gap-4">
                 {logos.map(logo => (
-                  <div key={logo.id} className="relative w-10 h-10 bg-white rounded-lg border border-white/10 group overflow-hidden">
-                    <img src={logo.url} className="w-full h-full object-contain p-1" />
-                    <button onClick={() => setLogos(l => l.filter(x => x.id !== logo.id))} className="absolute inset-0 bg-red-600/80 flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity"><X className="w-3 h-3 text-white" /></button>
+                  <div key={logo.id} className="relative w-16 h-16 bg-white rounded-full p-1 border-2 border-amber-500 shadow-xl group overflow-hidden">
+                    <img src={logo.url} className="w-full h-full object-contain rounded-full" />
+                    <button onClick={() => setLogos(l => l.filter(x => x.id !== logo.id))} className="absolute inset-0 bg-red-600/90 flex items-center justify-center opacity-0 group-hover:opacity-100 transition-all">
+                      <X className="w-6 h-6 text-white" />
+                    </button>
                   </div>
                 ))}
-                <label className="w-10 h-10 border border-dashed border-white/20 rounded-lg flex items-center justify-center cursor-pointer hover:bg-white/5 transition-all">
+                <label className="w-16 h-16 border-2 border-dashed border-white/10 rounded-full flex items-center justify-center cursor-pointer hover:bg-amber-500/10 hover:border-amber-500/40 transition-all">
                   <input type="file" className="hidden" accept="image/*" onChange={(e) => {
                     const file = e.target.files?.[0];
                     if (file) {
@@ -222,36 +255,31 @@ const App: React.FC = () => {
                       reader.readAsDataURL(file);
                     }
                   }} />
-                  <Plus className="w-4 h-4 text-slate-500" />
+                  <Plus className="w-8 h-8 text-slate-700" />
                 </label>
               </div>
-            </div>
+            </section>
 
-            {/* Product Section */}
-            <div className="space-y-2">
-              <label className="text-[9px] font-bold text-amber-500 uppercase tracking-widest flex items-center gap-2">
-                <div className="w-1 h-1 bg-amber-500 rounded-full"></div> รูปสินค้าจริง
+            <section className="space-y-4">
+              <label className="text-[11px] font-bold text-amber-500 uppercase tracking-widest flex items-center gap-2">
+                <ImageIcon className="w-4 h-4" /> รูปสินค้า
               </label>
-              <div className={`relative w-full h-44 border border-white/10 rounded-xl overflow-hidden bg-black/40 group ${isRemovingBg ? 'scanning' : ''}`}>
+              <div className={`relative w-full h-64 border-2 border-dashed border-white/5 rounded-[36px] overflow-hidden bg-black/40 group ${isRemovingBg ? 'scanning' : ''}`}>
                 {productImage ? (
                   <>
-                    <img src={productImage} className={`w-full h-full object-contain p-4 transition-all ${isRemovingBg ? 'opacity-30' : ''}`} />
-                    <div className="absolute top-2 right-2 flex gap-2">
-                      <button 
-                        onClick={handleRemoveBackground} 
-                        disabled={isRemovingBg}
-                        className="bg-amber-500 text-black px-3 py-1.5 rounded-lg text-[10px] font-bold flex items-center gap-1.5 shadow-lg hover:scale-105 active:scale-95 transition-all disabled:opacity-50"
-                      >
-                        {isRemovingBg ? <RefreshCw className="w-3 h-3 animate-spin" /> : <Wand2 className="w-3 h-3" />}
-                        ลบพื้นหลัง (AI)
+                    <img src={productImage} className={`w-full h-full object-contain p-8 transition-all ${isRemovingBg ? 'opacity-20 blur-xl' : ''}`} />
+                    <div className="absolute top-4 right-4 flex gap-2">
+                      <button onClick={handleRemoveBackground} disabled={isRemovingBg} className="bg-amber-500 text-black px-5 py-3 rounded-2xl text-[11px] font-bold flex items-center gap-2 shadow-2xl hover:scale-105 active:scale-95 transition-all">
+                        {isRemovingBg ? <RefreshCw className="w-5 h-5 animate-spin" /> : <Scissors className="w-5 h-5" />}
+                        ลบพื้นหลัง
                       </button>
-                      <button onClick={() => setProductImage(null)} className="bg-black/60 text-white p-1.5 rounded-lg hover:bg-red-500 transition-colors">
-                        <X className="w-3 h-3" />
+                      <button onClick={() => setProductImage(null)} className="bg-black/80 text-white p-3 rounded-2xl hover:bg-red-500 transition-colors">
+                        <X className="w-5 h-5" />
                       </button>
                     </div>
                   </>
                 ) : (
-                  <label className="h-full w-full flex flex-col items-center justify-center cursor-pointer hover:bg-white/5 transition-colors">
+                  <label className="h-full w-full flex flex-col items-center justify-center cursor-pointer hover:bg-white/5 transition-all">
                     <input type="file" className="hidden" accept="image/*" onChange={(e) => {
                       const file = e.target.files?.[0];
                       if (file) {
@@ -260,82 +288,92 @@ const App: React.FC = () => {
                         reader.readAsDataURL(file);
                       }
                     }} />
-                    <ImageIcon className="w-6 h-6 mb-2 opacity-30" />
-                    <span className="text-[9px] font-bold uppercase tracking-widest opacity-40">อัปโหลดรูปสินค้า</span>
+                    <ImageIcon className="w-12 h-12 opacity-10 mb-4" />
+                    <p className="text-[11px] font-bold text-slate-500 uppercase tracking-widest">คลิกเพื่ออัปโหลดสินค้า</p>
                   </label>
                 )}
-                {isRemovingBg && (
-                  <div className="absolute inset-0 flex items-center justify-center bg-black/40 backdrop-blur-sm">
-                    <div className="text-center">
-                      <div className="w-8 h-8 border-2 border-amber-500/20 border-t-amber-500 rounded-full animate-spin mx-auto mb-2"></div>
-                      <p className="text-[9px] font-bold text-amber-500 uppercase tracking-tighter">กำลังลบพื้นหลัง...</p>
-                    </div>
-                  </div>
-                )}
               </div>
-            </div>
+            </section>
 
-            {/* Inputs Section */}
-            <div className="space-y-4">
+            <section className="space-y-5">
               <div className="space-y-2">
-                <label className="text-[9px] font-bold text-amber-500 uppercase tracking-widest">ข้อความพาดหัว</label>
-                <input type="text" value={posterText} onChange={e => setPosterText(e.target.value)} placeholder="ชื่อสินค้าหรือสโลแกน" className="w-full bg-black/60 border border-white/10 rounded-lg px-4 py-2.5 text-xs outline-none focus:border-amber-500/40 text-white" />
+                <label className="text-[11px] font-bold text-slate-400 uppercase tracking-widest">พาดหัว (จะอยู่ด้านล่าง)</label>
+                <input type="text" value={posterText} onChange={e => setPosterText(e.target.value)} placeholder="เช่น สารสนเทศ สพจ.น่าน" className="w-full bg-white/5 border border-white/10 rounded-2xl px-6 py-4 text-sm outline-none focus:border-amber-500/40 text-white transition-all shadow-inner" />
               </div>
               <div className="space-y-2">
-                <label className="text-[9px] font-bold text-amber-500 uppercase tracking-widest">รายละเอียดฉากหลัง</label>
-                <textarea value={prompt} onChange={e => setPrompt(e.target.value)} placeholder="อธิบายฉาก เช่น 'บนหาดทรายขาว', 'ในคาเฟ่สวยๆ'" className="w-full bg-black/60 border border-white/10 rounded-xl p-4 text-xs outline-none focus:border-amber-500/40 h-16 resize-none text-white" />
+                <label className="text-[11px] font-bold text-slate-400 uppercase tracking-widest">รายละเอียดฉาก</label>
+                <textarea value={prompt} onChange={e => setPrompt(e.target.value)} placeholder="เช่น ฉากน้ำตกหรูหรา, ลายกนกสีเขียวทอง" className="w-full bg-white/5 border border-white/10 rounded-2xl p-6 text-sm outline-none focus:border-amber-500/40 h-24 resize-none text-white transition-all shadow-inner" />
               </div>
-            </div>
 
-            <div className="grid grid-cols-2 gap-2">
-              <select value={styleIndex} onChange={e => setStyleIndex(Number(e.target.value))} className="bg-black/80 border border-white/10 rounded-lg px-3 py-2 text-[10px] font-bold uppercase cursor-pointer outline-none">
-                {STYLE_PRESETS.map((s, i) => <option key={i} value={i}>{s.label}</option>)}
-              </select>
-              <select value={aspectRatio} onChange={e => setAspectRatio(e.target.value as any)} className="bg-black/80 border border-white/10 rounded-lg px-3 py-2 text-[10px] font-bold uppercase cursor-pointer outline-none">
-                {ASPECT_RATIOS.map(r => <option key={r.id} value={r.id}>{r.label}</option>)}
-              </select>
-            </div>
+              <div className="grid grid-cols-2 gap-4">
+                <div className="space-y-2">
+                  <p className="text-[10px] font-bold text-slate-500 uppercase tracking-widest">สไตล์</p>
+                  <select value={styleIndex} onChange={e => setStyleIndex(Number(e.target.value))} className="w-full bg-slate-800 border border-white/10 rounded-xl px-4 py-4 text-[11px] font-bold uppercase cursor-pointer outline-none">
+                    {STYLE_PRESETS.map((s, i) => <option key={i} value={i}>{s.label}</option>)}
+                  </select>
+                </div>
+                <div className="space-y-2">
+                  <p className="text-[10px] font-bold text-slate-500 uppercase tracking-widest">ขนาด</p>
+                  <select value={aspectRatio} onChange={e => setAspectRatio(e.target.value as any)} className="w-full bg-slate-800 border border-white/10 rounded-xl px-4 py-4 text-[11px] font-bold uppercase cursor-pointer outline-none">
+                    {ASPECT_RATIOS.map(r => <option key={r.id} value={r.id}>{r.label}</option>)}
+                  </select>
+                </div>
+              </div>
+            </section>
 
-            <button 
-              onClick={handleGenerate} 
-              disabled={isGenerating || isRemovingBg} 
-              className="w-full py-4 rounded-full font-bold text-[10px] uppercase tracking-widest flex items-center justify-center gap-2 bg-gradient-to-r from-amber-400 to-amber-600 text-black hover:shadow-[0_0_20px_rgba(245,158,11,0.3)] disabled:opacity-50 transition-all"
-            >
-              {isGenerating ? <RefreshCw className="w-4 h-4 animate-spin" /> : <Rocket className="w-4 h-4" />}
-              เจนเนอเรทฉากหลัง AI
+            <button onClick={handleGenerate} disabled={isGenerating || isRemovingBg} className="group relative w-full py-6 rounded-[30px] font-bold text-xs uppercase tracking-[0.4em] overflow-hidden transition-all active:scale-95 disabled:opacity-50">
+              <div className="absolute inset-0 bg-gradient-to-r from-amber-400 via-amber-600 to-amber-400 bg-[length:200%_100%] animate-shimmer"></div>
+              <div className="relative flex items-center justify-center gap-3 text-black">
+                {isGenerating ? <RefreshCw className="w-6 h-6 animate-spin" /> : <Rocket className="w-6 h-6" />}
+                เริ่มสร้างโปสเตอร์
+              </div>
             </button>
           </div>
         </div>
 
-        <div className="lg:col-span-8 flex flex-col items-center justify-center bg-black/40 border border-white/5 rounded-[32px] p-6 relative overflow-hidden h-full shadow-inner">
+        {/* Output Section */}
+        <div className="lg:col-span-8 bg-[#010206] rounded-[60px] border border-white/5 relative overflow-hidden flex flex-col items-center justify-center p-12 shadow-[inset_0_0_150px_rgba(0,0,0,1)]">
            {isGenerating ? (
-             <div className="text-center space-y-4">
-                <div className="w-12 h-12 border-2 border-amber-500/20 border-t-amber-500 rounded-full animate-spin mx-auto"></div>
-                <p className="text-amber-500 font-bold text-[10px] tracking-widest uppercase">กำลังเนรมิตฉากหลังระดับสตูดิโอ...</p>
+             <div className="text-center">
+                <div className="w-32 h-32 border-4 border-amber-500/10 border-t-amber-500 rounded-full animate-spin mx-auto mb-10 shadow-xl shadow-amber-500/10"></div>
+                <h3 className="text-amber-500 font-bold text-2xl tracking-[0.5em] uppercase animate-pulse">CREATING MAGIC...</h3>
              </div>
            ) : previewUrl ? (
-             <div className="w-full h-full flex flex-col items-center justify-center gap-6 animate-in fade-in duration-700">
-               <div className="relative shadow-2xl rounded-xl overflow-hidden border border-white/10 max-w-full max-h-[60vh]">
-                 <img src={previewUrl} className="max-h-full w-auto block shadow-2xl" alt="AI Poster Result" />
+             <div className="w-full h-full flex flex-col items-center justify-center gap-12 animate-in fade-in zoom-in duration-700">
+               <div className="relative shadow-[0_100px_200px_rgba(0,0,0,1)] rounded-[48px] overflow-hidden border border-white/10 max-w-full max-h-[75vh]">
+                 <img src={previewUrl} className="max-h-full w-auto block rounded-[44px]" alt="Poster Output" />
                </div>
-               <div className="flex gap-3">
-                  <button onClick={handleDownload} className="bg-white text-black px-10 py-3.5 rounded-full font-bold text-[10px] uppercase tracking-widest flex items-center gap-2 hover:scale-105 transition-all shadow-xl">
-                    <Download className="w-4 h-4" /> ดาวน์โหลดภาพ
-                  </button>
-                  <button onClick={() => { setCurrentPoster(null); setPreviewUrl(null); }} className="bg-white/5 border border-white/10 text-white/60 px-6 py-3.5 rounded-full font-bold text-[10px] uppercase hover:bg-white/10 transition-all">
-                    ออกแบบใหม่
-                  </button>
+               <div className="flex gap-6">
+                 <button onClick={handleDownload} className="bg-white text-black px-16 py-6 rounded-[32px] font-black text-xs uppercase tracking-[0.3em] flex items-center gap-4 hover:bg-amber-500 transition-all shadow-3xl active:scale-95">
+                   <Download className="w-6 h-6" /> DOWNLOAD
+                 </button>
+                 <button onClick={() => { setCurrentPoster(null); setPreviewUrl(null); }} className="bg-white/5 text-white/30 px-8 py-6 rounded-[32px] font-bold text-xs uppercase tracking-widest hover:bg-white/10 transition-all border border-white/10">
+                   RESET
+                 </button>
                </div>
              </div>
            ) : (
-             <div className="opacity-10 text-center select-none">
-                <ImageIcon className="w-16 h-16 mx-auto mb-4 text-slate-500" />
-                <p className="text-[9px] font-bold uppercase tracking-[0.3em] text-slate-400">อัปโหลดสินค้าและกดลบพื้นหลังเพื่อเริ่ม</p>
+             <div className="text-center opacity-5">
+                <Layout className="w-56 h-56 mx-auto mb-8 text-white" />
+                <p className="text-[20px] font-black tracking-[1em] text-white">READY FOR ART</p>
              </div>
            )}
            <canvas ref={canvasRef} className="hidden" />
+           <div className="absolute top-[-20%] left-[-10%] w-[80%] h-[80%] bg-amber-500/[0.03] rounded-full blur-[250px] pointer-events-none"></div>
         </div>
       </main>
+
+      <style>{`
+        @keyframes shimmer { 0% { background-position: 200% 0; } 100% { background-position: -200% 0; } }
+        .animate-shimmer { animation: shimmer 5s linear infinite; }
+        .custom-scrollbar::-webkit-scrollbar { width: 5px; }
+        .custom-scrollbar::-webkit-scrollbar-thumb { background: rgba(255,255,255,0.05); border-radius: 10px; }
+        .scanning::after {
+          content: ''; position: absolute; top: 0; left: 0; right: 0; height: 3px;
+          background: #f59e0b; box-shadow: 0 0 25px #f59e0b; animation: scan 2s linear infinite;
+        }
+        @keyframes scan { 0% { transform: translateY(-100%); } 100% { transform: translateY(400%); } }
+      `}</style>
     </div>
   );
 };
