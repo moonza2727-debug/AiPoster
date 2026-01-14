@@ -1,103 +1,80 @@
 
-import { GoogleGenAI, Type } from "@google/genai";
+import { GoogleGenAI } from "@google/genai";
 import { GenerationConfig } from "../types";
 
 /**
- * ดึง API KEY ล่าสุด
- * ลำดับความสำคัญ: 1. Vercel (Environment Variable) -> 2. Manual (LocalStorage)
+ * Tests the connection to the Gemini API
  */
-const getAIClient = () => {
-  const systemKey = process.env.API_KEY;
-  const customKey = localStorage.getItem('CUSTOM_API_KEY');
-  
-  // ใช้คีย์จาก Vercel ก่อน ถ้าไม่มี (หรือเป็นค่าว่าง) ค่อยใช้คีย์ที่ผู้ใช้กรอกเอง
-  const apiKey = (systemKey && systemKey.trim() !== "") ? systemKey : (customKey || "");
-  
-  return new GoogleGenAI({ apiKey });
-};
-
-export const generatePosterSlogan = async (productInfo: string): Promise<string[]> => {
+export const testConnection = async (): Promise<{valid: boolean, error?: string}> => {
   try {
-    const ai = getAIClient();
+    const ai = new GoogleGenAI({ apiKey: process.env.API_KEY });
     const response = await ai.models.generateContent({
       model: 'gemini-3-flash-preview',
-      contents: [{
-        parts: [{
-          text: `คุณคือผู้เชี่ยวชาญด้านการตลาด ช่วยคิดคำโปรโมทสั้นๆ กระชับ สำหรับ: "${productInfo}" ขอ 5 แบบที่แตกต่างกัน ส่งกลับเป็น JSON Array ของ String เท่านั้น`
-        }]
-      }],
-      config: {
-        responseMimeType: "application/json",
-        responseSchema: {
-          type: Type.ARRAY,
-          items: { type: Type.STRING }
-        }
-      }
+      contents: 'hi',
+      config: { maxOutputTokens: 2 }
     });
-    
-    const text = response.text;
-    return text ? JSON.parse(text) : ["สินค้าคุณภาพดี", "โปรโมชั่นพิเศษ"];
+    return { valid: !!response.text };
   } catch (e: any) {
-    console.error("Slogan Error:", e);
-    return ["สินค้าคุณภาพดี", "โปรโมชั่นพิเศษ", "ของพรีเมียม", "ดีลสุดคุ้ม"];
+    return { valid: false, error: e.message };
   }
 };
 
+/**
+ * Generates a poster image using a Hybrid approach:
+ * 1. Gemini (Free Tier) generates a professional English visual prompt.
+ * 2. A Free Community Engine (Pollinations/Flux) renders the pixels.
+ */
 export const generatePosterImage = async (config: GenerationConfig): Promise<string> => {
-  const modelName = config.highQuality ? 'gemini-3-pro-image-preview' : 'gemini-2.5-flash-image';
-  const ai = getAIClient();
+  const ai = new GoogleGenAI({ apiKey: process.env.API_KEY });
   
-  const parts: any[] = [];
-  const stylePrompt = config.style || "Commercial photography";
-  const finalPrompt = `Professional product poster: "${config.prompt}". 
-    Headline: "${config.posterText || ''}". 
-    Style: ${stylePrompt}. 
-    Clean background, studio lighting.`;
+  // Step 1: Use Gemini to "Imagine" a professional prompt in English
+  const systemInstruction = `You are a professional advertising art director. 
+  Convert the user's product description into a highly detailed, cinematic, high-end commercial photography prompt.
+  Focus on: Studio lighting (Rembrandt, softbox), texture (4k, 8k), composition (Rule of thirds, macro), and atmosphere.
+  DO NOT include any text, letters, or numbers in the visual description.
+  Output ONLY the English prompt string.`;
 
-  if (config.baseImage) {
-    const base64Data = config.baseImage.includes(',') ? config.baseImage.split(',')[1] : config.baseImage;
-    parts.push({
-      inlineData: {
-        data: base64Data,
-        mimeType: 'image/png'
-      }
-    });
-  }
-  
-  parts.push({ text: finalPrompt });
+  const userRequest = `Product: ${config.prompt}. Style: ${config.style}. Aspect Ratio: ${config.aspectRatio}. ${config.posterText ? `Context: ${config.posterText}` : ''}`;
 
   try {
-    const response = await ai.models.generateContent({
-      model: modelName,
-      contents: { parts },
-      config: {
-        imageConfig: {
-          aspectRatio: config.aspectRatio as any,
-          ...(modelName === 'gemini-3-pro-image-preview' ? { imageSize: '1K' } : {})
-        }
+    const geminiResponse = await ai.models.generateContent({
+      model: 'gemini-3-flash-preview',
+      contents: userRequest,
+      config: { 
+        systemInstruction,
+        temperature: 0.7,
+        maxOutputTokens: 200
       }
     });
 
-    const candidate = response.candidates?.[0];
-    if (candidate?.content?.parts) {
-      for (const part of candidate.content.parts) {
-        if (part.inlineData?.data) {
-          return `data:image/png;base64,${part.inlineData.data}`;
-        }
-      }
-    }
+    const visualPrompt = geminiResponse.text?.trim() || `Professional product photography of ${config.prompt}, high-end ${config.style} style, studio lighting`;
     
-    throw new Error("AI ไม่สามารถสร้างภาพได้ในขณะนี้ กรุณาลองใหม่");
-  } catch (error: any) {
-    console.error("Gemini API Error:", error);
-    const errorMessage = error.message || error.toString() || "";
-    throw new Error(errorMessage);
-  }
-};
+    // Step 2: Use Free Community Engine to generate the actual image
+    // We use Pollinations AI because it's fast, free, and supports high-quality prompts from Gemini
+    const seed = Math.floor(Math.random() * 1000000);
+    const [widthRatio, heightRatio] = config.aspectRatio.split(':').map(Number);
+    
+    // Standardizing dimensions for better quality (Approx 1024-1280px)
+    const baseSize = 1024;
+    const w = widthRatio >= heightRatio ? baseSize : Math.floor(baseSize * (widthRatio / heightRatio));
+    const h = heightRatio >= widthRatio ? baseSize : Math.floor(baseSize * (heightRatio / widthRatio));
 
-export const openKeySelector = async (): Promise<void> => {
-  const win = window as any;
-  if (win.aistudio?.openSelectKey) {
-    await win.aistudio.openSelectKey();
+    const imageUrl = `https://image.pollinations.ai/prompt/${encodeURIComponent(visualPrompt)}?width=${w}&height=${h}&seed=${seed}&nologo=true&model=flux&enhance=true`;
+
+    // Step 3: Fetch the image and convert to Base64 to keep the Canvas logic working
+    const imgResponse = await fetch(imageUrl);
+    if (!imgResponse.ok) throw new Error("IMAGE_ENGINE_ERROR");
+    
+    const blob = await imgResponse.blob();
+    return new Promise((resolve, reject) => {
+      const reader = new FileReader();
+      reader.onloadend = () => resolve(reader.result as string);
+      reader.onerror = reject;
+      reader.readAsDataURL(blob);
+    });
+
+  } catch (error: any) {
+    console.error("Generation Error:", error);
+    throw new Error("OTHER_ERROR");
   }
 };

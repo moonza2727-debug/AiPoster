@@ -1,103 +1,53 @@
 
 import React, { useState, useRef, useEffect } from 'react';
 import { 
-  Sparkles, 
-  Image as ImageIcon, 
-  Download, 
-  Settings2, 
-  RefreshCw,
-  X,
-  Plus,
-  AlertTriangle,
-  Type as TypeIcon,
-  Rocket,
-  CheckCircle2,
-  Clock,
-  Key,
-  Save
+  Sparkles, Image as ImageIcon, Download, RefreshCw, X, Plus,
+  Rocket, ShieldCheck, ShieldAlert, Zap, Globe
 } from 'lucide-react';
 import { AspectRatio, GeneratedPoster } from './types';
 import { STYLE_PRESETS, ASPECT_RATIOS } from './constants';
-import { generatePosterImage, openKeySelector } from './services/gemini';
+import { generatePosterImage, testConnection } from './services/gemini';
 
-interface Logo {
-  id: string;
-  url: string;
-}
+interface Logo { id: string; url: string; }
 
 const App: React.FC = () => {
   const [prompt, setPrompt] = useState('');
   const [posterText, setPosterText] = useState('');
   const [styleIndex, setStyleIndex] = useState(0);
   const [aspectRatio, setAspectRatio] = useState<AspectRatio>(AspectRatio.SQUARE);
-  const [highQuality, setHighQuality] = useState(false);
   const [isGenerating, setIsGenerating] = useState(false);
-  const [error, setError] = useState<string | null>(null);
-  const [cooldown, setCooldown] = useState(0);
-  const [isAiStudio, setIsAiStudio] = useState(false);
-  const [hasKey, setHasKey] = useState(false);
+  const [errorType, setErrorType] = useState<'NONE' | 'KEY' | 'OTHER'>('NONE');
+  const [keyStatus, setKeyStatus] = useState<'testing' | 'valid' | 'invalid' | 'none'>('none');
   const [productImage, setProductImage] = useState<string | null>(null);
   const [logos, setLogos] = useState<Logo[]>([]);
   const [currentPoster, setCurrentPoster] = useState<GeneratedPoster | null>(null);
-  const [showKeyManager, setShowKeyManager] = useState(false);
-  const [manualKey, setManualKey] = useState(localStorage.getItem('CUSTOM_API_KEY') || '');
   
   const canvasRef = useRef<HTMLCanvasElement>(null);
 
-  useEffect(() => {
-    const checkKeyStatus = async () => {
-      const win = window as any;
-      const systemKey = process.env.API_KEY;
-      const customKey = localStorage.getItem('CUSTOM_API_KEY');
-      if ((systemKey && systemKey.trim() !== "") || (customKey && customKey.trim() !== "")) {
-        setHasKey(true);
-      } else if (win.aistudio && await win.aistudio.hasSelectedApiKey?.()) {
-        setHasKey(true);
-      } else {
-        setHasKey(false);
-      }
-    };
-    checkKeyStatus();
-    const interval = setInterval(checkKeyStatus, 2000);
-    return () => clearInterval(interval);
-  }, []);
-
-  useEffect(() => {
-    if (cooldown > 0) {
-      const timer = setTimeout(() => setCooldown(cooldown - 1), 1000);
-      return () => clearTimeout(timer);
-    }
-  }, [cooldown]);
-
-  const saveManualKey = () => {
-    if (manualKey.trim()) {
-      localStorage.setItem('CUSTOM_API_KEY', manualKey.trim());
-      setShowKeyManager(false);
-      setCooldown(0); // รีเซ็ตเวลาทันทีที่บันทึกคีย์ใหม่
-      setError(null);
-    }
+  const checkKey = async () => {
+    setKeyStatus('testing');
+    const res = await testConnection();
+    setKeyStatus(res.valid ? 'valid' : 'invalid');
   };
 
+  useEffect(() => { checkKey(); }, []);
+
   const handleGenerate = async () => {
-    // ไม่บล็อกปุ่มแล้ว พี่กดได้ตลอดแม้ cooldown > 0
-    setError(null);
+    setErrorType('NONE');
     if (!prompt.trim() && !productImage) {
-      setError("กรุณากรอกข้อมูลสินค้า");
+      setErrorType('OTHER');
       return;
     }
-
     setIsGenerating(true);
     try {
       const result = await generatePosterImage({
         prompt,
-        style: STYLE_PRESETS[styleIndex].prompt as any,
+        style: STYLE_PRESETS[styleIndex].label as any, // Use label for better AI context
         aspectRatio,
-        highQuality,
+        highQuality: true,
         baseImage: productImage || undefined,
-        removeBackground: true,
         posterText
       });
-
       setCurrentPoster({
         id: Date.now().toString(),
         url: result,
@@ -106,100 +56,129 @@ const App: React.FC = () => {
         aspectRatio,
         timestamp: Date.now()
       });
-      setCooldown(0);
-      setError(null);
     } catch (err: any) {
-      const msg = err.message || "";
-      if (msg.includes("429") || msg.includes("Quota")) {
-        setError("โควตาเต็ม (โปรดรอสักครู่หรือเปลี่ยนคีย์)");
-        setCooldown(60); 
-      } else {
-        setError("เกิดข้อผิดพลาด โปรดตรวจสอบคีย์");
-      }
+      setErrorType('OTHER');
     } finally {
       setIsGenerating(false);
     }
   };
 
-  const downloadImage = async () => {
-    if (!currentPoster || !canvasRef.current) return;
+  const drawToCanvas = async () => {
+    if (!currentPoster || !canvasRef.current) return null;
     const canvas = canvasRef.current;
     const ctx = canvas.getContext('2d');
-    if (!ctx) return;
+    if (!ctx) return null;
+
     const mainImg = new Image();
     mainImg.crossOrigin = "anonymous";
     mainImg.src = currentPoster.url;
-    await new Promise(r => mainImg.onload = r);
+    await new Promise((resolve) => {
+      mainImg.onload = resolve;
+      mainImg.onerror = resolve;
+    });
+
     canvas.width = mainImg.width;
     canvas.height = mainImg.height;
     ctx.drawImage(mainImg, 0, 0);
-    const logoSize = canvas.width * 0.15;
-    let offsetX = 40;
+
+    const padding = canvas.width * 0.06;
+
+    if (posterText.trim()) {
+      const fontSize = canvas.width * 0.095;
+      ctx.font = `bold ${fontSize}px "Prompt", sans-serif`;
+      ctx.shadowColor = "rgba(0,0,0,0.9)";
+      ctx.shadowBlur = 30;
+      ctx.shadowOffsetX = 0;
+      ctx.shadowOffsetY = 10;
+      ctx.fillStyle = "#ffffff";
+      ctx.textAlign = "center";
+      ctx.fillText(posterText, canvas.width / 2, canvas.height - (padding * 2.5));
+      ctx.shadowBlur = 0;
+      ctx.shadowOffsetY = 0;
+    }
+
+    const logoSize = canvas.width * 0.14;
+    let logoXOffset = padding;
     for (const logo of logos) {
       const logoImg = new Image();
       logoImg.src = logo.url;
       await new Promise(r => logoImg.onload = r);
       const h = logoSize * (logoImg.height / logoImg.width);
-      ctx.drawImage(logoImg, canvas.width - (logoSize + offsetX), 40, logoSize, h);
-      offsetX += logoSize + 20;
+      ctx.drawImage(logoImg, canvas.width - (logoSize + logoXOffset), padding, logoSize, h);
+      logoXOffset += logoSize + 25;
     }
-    const link = document.createElement('a');
-    link.download = `poster-${Date.now()}.png`;
-    link.href = canvas.toDataURL('image/png');
-    link.click();
+
+    return canvas.toDataURL('image/png');
   };
+
+  const handleDownload = async () => {
+    const dataUrl = await drawToCanvas();
+    if (dataUrl) {
+      const link = document.createElement('a');
+      link.download = `AI-Poster-Pro-${Date.now()}.png`;
+      link.href = dataUrl;
+      link.click();
+    }
+  };
+
+  const [previewUrl, setPreviewUrl] = useState<string | null>(null);
+  
+  useEffect(() => {
+    if (currentPoster) {
+      const timer = setTimeout(() => {
+        drawToCanvas().then(url => setPreviewUrl(url));
+      }, 400);
+      return () => clearTimeout(timer);
+    } else {
+      setPreviewUrl(null);
+    }
+  }, [currentPoster, posterText, logos]);
 
   return (
     <div className="min-h-screen bg-[#020408] text-slate-200 flex flex-col font-['Prompt']">
-      <nav className="border-b border-white/5 bg-black/40 backdrop-blur-xl sticky top-0 z-50 px-6 py-4 flex items-center justify-between">
-        <div className="flex items-center gap-3">
-          <div className="bg-amber-500 p-2 rounded-xl"><Sparkles className="w-5 h-5 text-black" /></div>
-          <h1 className="text-lg font-bold tracking-tight">AI POSTER PRO</h1>
+      {/* Premium Navbar */}
+      <nav className="border-b border-white/5 bg-black/80 backdrop-blur-3xl sticky top-0 z-50 px-8 py-6 flex items-center justify-between shadow-[0_10px_50px_rgba(0,0,0,0.5)]">
+        <div className="flex items-center gap-5">
+          <div className="bg-gradient-to-br from-amber-400 via-amber-500 to-amber-700 p-3 rounded-[20px] shadow-[0_0_25px_rgba(245,158,11,0.4)]">
+            <Sparkles className="w-6 h-6 text-black" />
+          </div>
+          <div>
+            <h1 className="text-2xl font-black tracking-tight leading-none uppercase italic">POSTER <span className="text-amber-500">PRO</span></h1>
+            <div className="flex items-center gap-2 mt-1.5">
+              <span className="w-1.5 h-1.5 bg-amber-500 rounded-full"></span>
+              <p className="text-[10px] font-black text-slate-500 tracking-[0.3em] uppercase">Hybrid AI Engine Active</p>
+            </div>
+          </div>
         </div>
         
-        <div className="flex items-center gap-4">
-          <button onClick={() => setShowKeyManager(true)} className="flex items-center gap-2 px-4 py-2 rounded-full bg-white/5 border border-white/10 text-slate-300 text-[11px] font-black hover:bg-white/10 transition-all uppercase tracking-widest">
-            <Key className="w-4 h-4" /> API Key
-          </button>
-          <div className={`hidden md:flex items-center gap-2 px-4 py-2 rounded-full border ${hasKey ? 'bg-green-500/10 border-green-500/30 text-green-400' : 'bg-red-500/10 border-red-500/30 text-red-400'}`}>
-            <CheckCircle2 className="w-3.5 h-3.5" />
-            <span className="text-[10px] font-black uppercase tracking-widest">{hasKey ? 'READY' : 'KEY MISSING'}</span>
+        <div className="flex items-center gap-5">
+          <div className={`px-6 py-2.5 rounded-full border-[1.5px] text-[10px] font-black uppercase tracking-widest flex items-center gap-3 transition-all duration-500 ${
+            keyStatus === 'valid' ? 'bg-amber-500/5 border-amber-500/20 text-amber-400 shadow-[0_0_30px_rgba(245,158,11,0.1)]' : 'bg-red-500/5 border-red-500/20 text-red-400'
+          }`}>
+            <Globe className="w-3 h-3" />
+            {keyStatus === 'valid' ? 'Gemini Free Tier' : 'Offline'}
           </div>
         </div>
       </nav>
 
-      {showKeyManager && (
-        <div className="fixed inset-0 z-[110] bg-black/95 backdrop-blur-xl flex items-center justify-center p-6">
-          <div className="bg-[#0a0c10] border border-white/10 rounded-[40px] max-w-lg w-full p-8 space-y-6 shadow-2xl">
-            <div className="flex justify-between items-center">
-              <h2 className="text-xl font-black uppercase tracking-tight flex items-center gap-3"><Key className="text-amber-500" /> ตั้งค่า API Key</h2>
-              <button onClick={() => setShowKeyManager(false)} className="p-2 bg-white/5 rounded-full hover:bg-white/10"><X className="w-5 h-5" /></button>
-            </div>
-            <div className="space-y-4">
-              <p className="text-xs text-slate-400 italic">ระบบจะใช้คีย์จาก Vercel ก่อน ถ้าไม่มีจะใช้คีย์สำรองด้านล่างนี้ครับ</p>
-              <input type="password" value={manualKey} onChange={(e) => setManualKey(e.target.value)} placeholder="วาง API Key สำรอง..." className="w-full bg-black border border-white/10 rounded-2xl px-5 py-4 text-sm outline-none focus:border-amber-500/50 transition-all font-mono" />
-              <button onClick={saveManualKey} className="w-full py-4 bg-amber-500 text-black rounded-2xl font-black uppercase text-xs tracking-widest flex items-center justify-center gap-2 hover:bg-amber-400 transition-all">
-                <Save className="w-4 h-4" /> บันทึกและเริ่มใหม่ทันที
-              </button>
-            </div>
-          </div>
-        </div>
-      )}
-
-      <main className="flex-1 container mx-auto p-4 lg:p-8 grid lg:grid-cols-12 gap-8">
-        <div className="lg:col-span-4 space-y-4">
-          <div className="glass rounded-[40px] p-6 space-y-6 border border-white/10 shadow-2xl h-[calc(100vh-140px)] overflow-y-auto custom-scrollbar">
+      <main className="flex-1 container mx-auto p-4 lg:p-10 grid lg:grid-cols-12 gap-10 overflow-hidden">
+        {/* Sidebar Controls */}
+        <div className="lg:col-span-4 space-y-6 h-full overflow-y-auto pr-3 custom-scrollbar pb-20">
+          <div className="bg-gradient-to-b from-white/[0.07] to-white/[0.02] rounded-[50px] p-9 space-y-10 border border-white/10 shadow-[0_40px_100px_rgba(0,0,0,0.6)] backdrop-blur-xl relative overflow-hidden">
+            <div className="absolute -top-24 -left-24 w-64 h-64 bg-amber-500/10 blur-[100px] rounded-full pointer-events-none"></div>
             
-            <div className="space-y-3">
-              <label className="text-[10px] font-black text-amber-500 uppercase tracking-widest">โลโก้แบรนด์</label>
-              <div className="flex flex-wrap gap-2">
+            <div className="space-y-5">
+              <label className="text-[11px] font-black text-amber-500 uppercase tracking-[0.3em] flex items-center justify-between px-1">
+                <span>01. โลโก้แบรนด์</span>
+              </label>
+              <div className="flex flex-wrap gap-4">
                 {logos.map(logo => (
-                  <div key={logo.id} className="relative w-12 h-12 bg-white p-1 rounded-xl shadow-lg">
-                    <img src={logo.url} className="w-full h-full object-contain" />
-                    <button onClick={() => setLogos(l => l.filter(x => x.id !== logo.id))} className="absolute -top-1 -right-1 bg-red-500 rounded-full p-0.5"><X className="w-2 h-2 text-white" /></button>
+                  <div key={logo.id} className="relative w-16 h-16 bg-white rounded-2xl shadow-2xl border border-white/10 group animate-in zoom-in duration-300">
+                    <img src={logo.url} className="w-full h-full object-contain p-2" />
+                    <button onClick={() => setLogos(l => l.filter(x => x.id !== logo.id))} className="absolute -top-2.5 -right-2.5 bg-red-600 rounded-full p-1.5 shadow-xl opacity-0 group-hover:opacity-100 transition-all border-2 border-black"><X className="w-3 h-3 text-white" /></button>
                   </div>
                 ))}
-                <label className="w-12 h-12 border-2 border-dashed border-white/10 rounded-xl flex items-center justify-center cursor-pointer hover:bg-white/5 transition-colors">
+                <label className="w-16 h-16 border-2 border-dashed border-white/10 rounded-2xl flex items-center justify-center cursor-pointer hover:bg-amber-500/5 hover:border-amber-500/50 transition-all duration-300 group">
                   <input type="file" className="hidden" accept="image/*" onChange={(e) => {
                     const file = e.target.files?.[0];
                     if (file) {
@@ -208,14 +187,14 @@ const App: React.FC = () => {
                       reader.readAsDataURL(file);
                     }
                   }} />
-                  <Plus className="w-4 h-4 text-white/20" />
+                  <Plus className="w-6 h-6 text-white/10 group-hover:text-amber-500 transition-colors" />
                 </label>
               </div>
             </div>
 
-            <div className="space-y-3">
-              <label className="text-[10px] font-black text-amber-500 uppercase tracking-widest">รูปภาพสินค้า</label>
-              <label className="block w-full h-32 border border-white/10 rounded-3xl cursor-pointer relative overflow-hidden bg-black/40 hover:border-amber-500/30 transition-all">
+            <div className="space-y-5">
+              <label className="text-[11px] font-black text-amber-500 uppercase tracking-[0.3em] px-1">02. ผลิตภัณฑ์หลัก</label>
+              <label className="block w-full h-44 border-[1.5px] border-white/10 rounded-[40px] cursor-pointer relative overflow-hidden bg-black/60 hover:border-amber-500/40 transition-all duration-500 group shadow-inner">
                 <input type="file" className="hidden" accept="image/*" onChange={(e) => {
                   const file = e.target.files?.[0];
                   if (file) {
@@ -224,64 +203,114 @@ const App: React.FC = () => {
                     reader.readAsDataURL(file);
                   }
                 }} />
-                {productImage ? <img src={productImage} className="w-full h-full object-contain p-2" /> : <div className="h-full flex flex-col items-center justify-center opacity-20"><ImageIcon className="w-8 h-8" /></div>}
+                {productImage ? (
+                  <img src={productImage} className="w-full h-full object-contain p-5 animate-in fade-in" />
+                ) : (
+                  <div className="h-full flex flex-col items-center justify-center opacity-30 group-hover:opacity-100 transition-all duration-500">
+                    <ImageIcon className="w-8 h-8 text-slate-400 mb-4 group-hover:text-amber-500" />
+                    <span className="text-[10px] font-black uppercase tracking-[0.2em] text-slate-500">Upload Photo</span>
+                  </div>
+                )}
               </label>
             </div>
 
-            <div className="space-y-3">
-              <label className="text-[10px] font-black text-amber-500 uppercase tracking-widest">ข้อมูลโปสเตอร์</label>
-              <textarea value={prompt} onChange={e => setPrompt(e.target.value)} placeholder="ชื่อสินค้า/สรรพคุณ..." className="w-full bg-black/60 border border-white/10 rounded-2xl p-4 text-xs outline-none focus:border-amber-500/50 h-20 transition-all" />
-              <input type="text" value={posterText} onChange={e => setPosterText(e.target.value)} placeholder="พาดหัวบนภาพ" className="w-full bg-black/60 border border-white/10 rounded-2xl px-5 py-3 text-xs outline-none focus:border-amber-500/50 transition-all" />
+            <div className="space-y-5">
+              <label className="text-[11px] font-black text-amber-500 uppercase tracking-[0.3em] px-1">03. พาดหัวภาษาไทย</label>
+              <input 
+                type="text" 
+                value={posterText} 
+                onChange={e => setPosterText(e.target.value)} 
+                placeholder="เช่น 'น่านนากาแฟ อาราบิก้า 100%'" 
+                className="w-full bg-black/80 border border-white/10 rounded-2xl px-7 py-5 text-[13px] outline-none focus:border-amber-500/60 transition-all shadow-inner text-white placeholder:text-slate-700 font-medium" 
+              />
             </div>
 
-            <div className="space-y-3">
-              <label className="text-[10px] font-black text-amber-500 uppercase tracking-widest">สไตล์และขนาด</label>
-              <select value={styleIndex} onChange={e => setStyleIndex(Number(e.target.value))} className="w-full bg-black border border-white/10 rounded-2xl px-4 py-3 text-xs outline-none focus:border-amber-500/50 transition-all">
-                {STYLE_PRESETS.map((s, i) => <option key={i} value={i}>{s.label}</option>)}
-              </select>
-              <select value={aspectRatio} onChange={e => setAspectRatio(e.target.value as any)} className="w-full bg-black border border-white/10 rounded-2xl px-4 py-3 text-xs outline-none focus:border-amber-500/50 transition-all">
-                {ASPECT_RATIOS.map(r => <option key={r.id} value={r.id}>{r.label}</option>)}
-              </select>
+            <div className="space-y-5">
+              <label className="text-[11px] font-black text-amber-500 uppercase tracking-[0.3em] px-1">04. รายละเอียดสินค้า</label>
+              <textarea 
+                value={prompt} 
+                onChange={e => setPrompt(e.target.value)} 
+                placeholder="บอกลักษณะสินค้า เพื่อให้ AI ช่วยจินตนาการพื้นหลัง..." 
+                className="w-full bg-black/80 border border-white/10 rounded-[30px] p-7 text-[13px] outline-none focus:border-amber-500/60 h-32 resize-none transition-all shadow-inner text-white placeholder:text-slate-700 font-medium leading-relaxed" 
+              />
             </div>
 
-            {error && (
-              <div className="p-3 bg-red-500/10 border border-red-500/20 rounded-xl flex items-center gap-2 text-red-400 animate-in fade-in slide-in-from-top-1">
-                <AlertTriangle className="w-3.5 h-3.5" />
-                <span className="text-[10px] font-bold">{error}</span>
+            <div className="space-y-5">
+              <label className="text-[11px] font-black text-amber-500 uppercase tracking-[0.3em] px-1">05. สไตล์และอัตราส่วน</label>
+              <div className="grid grid-cols-2 gap-5">
+                <select 
+                  value={styleIndex} 
+                  onChange={e => setStyleIndex(Number(e.target.value))} 
+                  className="w-full bg-black/90 border border-white/10 rounded-2xl px-5 py-5 text-[11px] font-black outline-none hover:border-amber-500/40 transition-all appearance-none text-amber-100 cursor-pointer uppercase"
+                >
+                  {STYLE_PRESETS.map((s, i) => <option key={i} value={i}>{s.label}</option>)}
+                </select>
+                <select 
+                  value={aspectRatio} 
+                  onChange={e => setAspectRatio(e.target.value as any)} 
+                  className="w-full bg-black/90 border border-white/10 rounded-2xl px-5 py-5 text-[11px] font-black outline-none hover:border-amber-500/40 transition-all appearance-none text-amber-100 cursor-pointer uppercase"
+                >
+                  {ASPECT_RATIOS.map(r => <option key={r.id} value={r.id}>{r.label}</option>)}
+                </select>
               </div>
-            )}
+            </div>
 
             <button 
               onClick={handleGenerate} 
               disabled={isGenerating} 
-              className="w-full py-5 rounded-[30px] font-black text-[11px] uppercase tracking-widest flex items-center justify-center gap-3 bg-amber-500 text-black hover:bg-amber-400 active:scale-95 transition-all shadow-xl shadow-amber-500/10 disabled:opacity-50"
+              className="w-full py-7 rounded-[45px] font-black text-[14px] uppercase tracking-[0.3em] flex items-center justify-center gap-4 bg-gradient-to-r from-amber-400 via-amber-500 to-amber-600 text-black hover:scale-[1.02] active:scale-[0.98] transition-all shadow-[0_20px_50px_rgba(217,119,6,0.4)] disabled:opacity-50 disabled:grayscale relative overflow-hidden group/btn"
             >
-              {isGenerating ? <RefreshCw className="w-5 h-5 animate-spin" /> : cooldown > 0 ? <RefreshCw className="w-5 h-5" /> : <Rocket className="w-5 h-5" />}
-              {isGenerating ? 'กำลังประมวลผล...' : cooldown > 0 ? `กดเพื่อลองใหม่ทันที (${cooldown}ว)` : 'สร้างโปสเตอร์'}
+              <div className="absolute inset-0 bg-white/30 translate-x-[-100%] group-hover/btn:translate-x-[100%] transition-transform duration-1000"></div>
+              {isGenerating ? <RefreshCw className="w-6 h-6 animate-spin" /> : <Rocket className="w-6 h-6" />}
+              {isGenerating ? 'Gemini is Thinking...' : 'Generate Masterpiece'}
             </button>
           </div>
         </div>
 
-        <div className="lg:col-span-8 flex flex-col items-center justify-center bg-white/[0.01] border border-white/5 rounded-[60px] p-8 min-h-[500px] relative overflow-hidden">
-           <div className="absolute inset-0 bg-gradient-to-tr from-amber-500/5 to-transparent opacity-20"></div>
+        {/* Result Area */}
+        <div className="lg:col-span-8 flex flex-col items-center justify-center bg-[#030508] border border-white/[0.03] rounded-[80px] p-12 relative overflow-hidden h-full shadow-inner">
+           <div className="absolute top-0 right-0 w-[500px] h-[500px] bg-amber-500/[0.03] blur-[150px] rounded-full"></div>
+           
            {isGenerating ? (
-             <div className="text-center space-y-4 relative z-10">
-                <div className="w-16 h-16 border-4 border-amber-500 border-t-transparent rounded-full animate-spin mx-auto shadow-2xl shadow-amber-500/20"></div>
-                <p className="text-amber-500 font-black text-[10px] tracking-widest uppercase animate-pulse">AI is Designing...</p>
+             <div className="text-center space-y-10 relative z-10">
+                <div className="relative">
+                    <div className="w-32 h-32 border-4 border-amber-500/10 rounded-full mx-auto"></div>
+                    <div className="w-32 h-32 border-t-4 border-amber-500 rounded-full animate-spin mx-auto absolute top-0 left-1/2 -translate-x-1/2 shadow-[0_0_50px_rgba(245,158,11,0.5)]"></div>
+                </div>
+                <div className="space-y-3">
+                  <p className="text-amber-500 font-black text-lg tracking-[0.5em] uppercase animate-pulse">Processing Masterpiece</p>
+                  <p className="text-slate-600 text-[11px] uppercase font-bold tracking-[0.2em] max-w-xs mx-auto leading-relaxed">Using Hybrid Intelligence to create your vision for free</p>
+                </div>
              </div>
-           ) : currentPoster ? (
-             <div className="w-full h-full flex flex-col items-center gap-8 animate-in zoom-in duration-300 relative z-10">
-               <div className="relative shadow-[0_40px_80px_-15px_rgba(0,0,0,0.7)] rounded-[40px] overflow-hidden bg-black border border-white/10">
-                 <img src={currentPoster.url} className="max-h-[60vh] w-auto block" alt="Result" />
+           ) : previewUrl ? (
+             <div className="w-full h-full flex flex-col items-center justify-center gap-12 relative z-10 animate-in zoom-in fade-in duration-1000">
+               <div className="relative shadow-[0_80px_150px_-40px_rgba(0,0,0,1)] rounded-[60px] overflow-hidden bg-black border border-white/10 max-w-full max-h-[75vh] group/result transition-all duration-700 hover:shadow-amber-500/5">
+                 <img src={previewUrl} className="max-h-full w-auto block transition-transform duration-1000 group-hover/result:scale-[1.03]" alt="AI Poster Result" />
                </div>
-               <button onClick={downloadImage} className="bg-white text-black px-12 py-5 rounded-full font-black text-[11px] uppercase tracking-widest flex items-center gap-3 shadow-2xl hover:scale-105 transition-all">
-                 <Download className="w-5 h-5" /> ดาวน์โหลดภาพ
-               </button>
+               <div className="flex gap-6">
+                  <button 
+                    onClick={handleDownload} 
+                    className="bg-white text-black px-20 py-6 rounded-full font-black text-[13px] uppercase tracking-[0.2em] flex items-center gap-4 shadow-[0_20px_40px_rgba(255,255,255,0.1)] hover:scale-105 active:scale-95 transition-all hover:bg-amber-50"
+                  >
+                    <Download className="w-6 h-6" /> Download 4K HD
+                  </button>
+                  <button 
+                    onClick={() => { setCurrentPoster(null); setPreviewUrl(null); }} 
+                    className="bg-white/5 border border-white/10 text-white/50 px-12 py-6 rounded-full font-black text-[13px] uppercase tracking-[0.2em] hover:bg-white/10 transition-all hover:text-white"
+                  >
+                    New Design
+                  </button>
+               </div>
              </div>
            ) : (
-             <div className="opacity-10 flex flex-col items-center gap-4 relative z-10">
-                <ImageIcon className="w-16 h-16 text-slate-400" />
-                <p className="text-[10px] font-black tracking-widest uppercase">Select product to start</p>
+             <div className="opacity-20 flex flex-col items-center gap-10 relative z-10 select-none text-center">
+                <div className="w-40 h-40 bg-white/[0.02] rounded-[60px] flex items-center justify-center border border-white/5 rotate-12 shadow-2xl">
+                  <ImageIcon className="w-16 h-16 text-slate-500 -rotate-12" />
+                </div>
+                <div className="space-y-3">
+                  <p className="text-sm font-black tracking-[0.8em] uppercase text-slate-400">Masterpiece Studio</p>
+                  <p className="text-[11px] text-slate-600 font-bold uppercase tracking-[0.3em]">Hybrid Engine: No Credit Card Required</p>
+                </div>
              </div>
            )}
            <canvas ref={canvasRef} className="hidden" />
