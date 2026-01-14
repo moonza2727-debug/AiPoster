@@ -3,7 +3,6 @@ import { GoogleGenAI, Type } from "@google/genai";
 import { GenerationConfig } from "../types";
 
 // ฟังก์ชันสร้าง Client โดยใช้ค่าที่ถูกฉีดมาจาก Vite
-// ตามข้อกำหนด: สร้าง instance ใหม่ทุกครั้งเพื่อให้ใช้ Key ล่าสุดที่ผู้ใช้อาจเลือกใหม่ได้
 const getAIClient = () => {
   const apiKey = process.env.API_KEY;
   if (!apiKey || apiKey === "") {
@@ -12,7 +11,7 @@ const getAIClient = () => {
   return new GoogleGenAI({ apiKey });
 };
 
-// ใช้ gemini-3-flash-preview สำหรับงานข้อความที่ต้องการความแม่นยำและการสรุปผล
+// ใช้ gemini-3-flash-preview สำหรับงานข้อความ
 export const generatePosterSlogan = async (productInfo: string): Promise<string[]> => {
   try {
     const ai = getAIClient();
@@ -31,8 +30,9 @@ export const generatePosterSlogan = async (productInfo: string): Promise<string[
         }
       }
     });
-    // ดึงค่าจาก .text property (ไม่ใช่ method)
-    return JSON.parse(response.text || "[]");
+    
+    const text = response.text;
+    return text ? JSON.parse(text) : ["สินค้าคุณภาพดี", "โปรโมชั่นพิเศษ"];
   } catch (e: any) {
     console.error("Slogan Error:", e);
     if (e.message === "MISSING_API_KEY") throw e;
@@ -40,7 +40,7 @@ export const generatePosterSlogan = async (productInfo: string): Promise<string[
   }
 };
 
-// เลือกโมเดลตามคุณภาพที่ผู้ใช้ต้องการ: gemini-3-pro-image-preview (2K) หรือ gemini-2.5-flash-image
+// เลือกโมเดลตามคุณภาพที่ผู้ใช้ต้องการ
 export const generatePosterImage = async (config: GenerationConfig): Promise<string> => {
   const modelName = config.highQuality ? 'gemini-3-pro-image-preview' : 'gemini-2.5-flash-image';
   const ai = getAIClient();
@@ -72,18 +72,20 @@ export const generatePosterImage = async (config: GenerationConfig): Promise<str
       config: {
         imageConfig: {
           aspectRatio: config.aspectRatio as any,
-          // imageSize มีเฉพาะใน gemini-3-pro-image-preview
           ...(modelName === 'gemini-3-pro-image-preview' ? { imageSize: '2K' } : {})
         }
       }
     });
 
-    // วนลูปตรวจสอบ part เพื่อหา inlineData (รูปภาพ) ตามแนวทางปฏิบัติ
-    const candidates = response.candidates || [];
-    if (candidates.length > 0) {
-      for (const part of candidates[0].content.parts) {
-        if (part.inlineData) {
-          return `data:image/png;base64,${part.inlineData.data}`;
+    // แก้ไข Error TS2532: เพิ่มการตรวจสอบ candidates และ content?.parts อย่างปลอดภัย
+    const candidates = response.candidates;
+    if (candidates && candidates.length > 0) {
+      const firstCandidateParts = candidates[0].content?.parts;
+      if (firstCandidateParts) {
+        for (const part of firstCandidateParts) {
+          if (part.inlineData?.data) {
+            return `data:image/png;base64,${part.inlineData.data}`;
+          }
         }
       }
     }
