@@ -31,8 +31,8 @@ export const generatePosterSlogan = async (productInfo: string): Promise<string[
       }
     });
     
-    const text = response.text;
-    return JSON.parse(text || '[]');
+    const text = response.text || '[]';
+    return JSON.parse(text);
   } catch (e: any) {
     console.error("Slogan Error:", e);
     if (e?.message?.includes("429")) throw new Error("QUOTA_EXCEEDED");
@@ -62,7 +62,6 @@ export const generatePosterImage = async (config: GenerationConfig): Promise<str
   // 2. เตรียม Parts สำหรับโมเดลรูปภาพ
   const parts: any[] = [];
   
-  // ใส่รูปสินค้าถ้ามี (ต้องเป็น Base64 ที่ไม่มี Prefix data:image/...)
   if (config.baseImage) {
     const base64Data = config.baseImage.includes(',') 
       ? config.baseImage.split(',')[1] 
@@ -76,7 +75,6 @@ export const generatePosterImage = async (config: GenerationConfig): Promise<str
     });
   }
 
-  // คำสั่งสำหรับลบพื้นหลังและจัดฉาก
   const bgPrompt = config.removeBackground 
     ? "Isolate the product and place it in a brand new, luxurious studio background." 
     : "Enhance the overall aesthetic while keeping the original context.";
@@ -101,15 +99,18 @@ export const generatePosterImage = async (config: GenerationConfig): Promise<str
       }
     });
 
-    // ค้นหา Part ที่เป็นรูปภาพจาก Candidates
-    const candidate = response.candidates?.[0];
-    if (!candidate || !candidate.content || !candidate.content.parts) {
+    // ใช้การตรวจสอบแบบละเอียดเพื่อแก้ปัญหา TypeScript Error (TS18048)
+    const candidate = response.candidates && response.candidates[0];
+    const candidateParts = candidate?.content?.parts;
+
+    if (!candidateParts || candidateParts.length === 0) {
       throw new Error("API_RETURNED_NO_IMAGE");
     }
 
-    for (const part of candidate.content.parts) {
-      if (part.inlineData?.data) {
-        return `data:${part.inlineData.mimeType};base64,${part.inlineData.data}`;
+    for (const part of candidateParts) {
+      if (part.inlineData && part.inlineData.data) {
+        const mimeType = part.inlineData.mimeType || 'image/png';
+        return `data:${mimeType};base64,${part.inlineData.data}`;
       }
     }
 
@@ -127,7 +128,6 @@ export const generatePosterImage = async (config: GenerationConfig): Promise<str
 };
 
 export const hasApiKey = async (): Promise<boolean> => {
-  // ตรวจสอบทั้ง aistudio global และ process.env
   try {
     // @ts-ignore
     if (window.aistudio && typeof window.aistudio.hasSelectedApiKey === 'function') {
