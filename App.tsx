@@ -18,7 +18,13 @@ import {
   ExternalLink,
   CheckCircle2,
   Clock,
-  Info
+  Info,
+  RotateCcw,
+  BarChart3,
+  BookOpen,
+  MailPlus,
+  ArrowRightCircle,
+  HelpCircle
 } from 'lucide-react';
 import { AspectRatio, GeneratedPoster } from './types';
 import { STYLE_PRESETS, ASPECT_RATIOS } from './constants';
@@ -43,6 +49,7 @@ const App: React.FC = () => {
   const [productImage, setProductImage] = useState<string | null>(null);
   const [logos, setLogos] = useState<Logo[]>([]);
   const [currentPoster, setCurrentPoster] = useState<GeneratedPoster | null>(null);
+  const [showTutorial, setShowTutorial] = useState(false);
   
   const canvasRef = useRef<HTMLCanvasElement>(null);
 
@@ -100,8 +107,7 @@ const App: React.FC = () => {
       const msg = err.message || "";
       if (msg.includes("429") || msg.includes("RESOURCE_EXHAUSTED") || msg.includes("Quota")) {
         setError("QUOTA_ERROR");
-        // ถ้าเป็นโหมด Pro (High Quality) ให้รอ 60 วิ, ถ้าโหมดปกติรอ 30 วิ
-        setCooldown(highQuality ? 60 : 30);
+        setCooldown(60); 
       } else {
         setError(msg || "เกิดข้อผิดพลาดในการเชื่อมต่อ");
       }
@@ -153,19 +159,80 @@ const App: React.FC = () => {
         </div>
         
         <div className="flex items-center gap-4">
+          <button 
+            onClick={() => setShowTutorial(true)}
+            className="flex items-center gap-2 px-3 py-1.5 rounded-full bg-white/5 border border-white/10 text-[10px] font-bold text-amber-500 hover:bg-amber-500/10 transition-all shadow-lg shadow-amber-500/5"
+          >
+            <HelpCircle className="w-3 h-3" /> ติดปัญหาโควตาเต็ม?
+          </button>
           <div className={`hidden md:flex items-center gap-2 px-3 py-1.5 rounded-full border ${hasPrivateKey ? 'bg-green-500/10 border-green-500/30 text-green-400' : 'bg-white/5 border-white/10 text-slate-500'}`}>
             {hasPrivateKey ? <CheckCircle2 className="w-3 h-3" /> : <div className="w-2 h-2 rounded-full bg-slate-700" />}
             <span className="text-[9px] font-black uppercase tracking-widest">
-              {hasPrivateKey ? 'Private AI Studio Key' : 'Shared Global Key'}
+              {hasPrivateKey ? 'KEY ACTIVE' : 'NO KEY'}
             </span>
           </div>
           {isAiStudio && (
-            <button onClick={openKeySelector} className="p-2 bg-white/5 hover:bg-white/10 rounded-full border border-white/10 transition-colors">
-              <Settings2 className="w-4 h-4 text-slate-400" />
+            <button onClick={openKeySelector} className="p-2 bg-white/5 hover:bg-white/10 rounded-full border border-white/10 transition-colors group">
+              <Settings2 className="w-4 h-4 text-slate-400 group-hover:text-amber-500 transition-colors" />
             </button>
           )}
         </div>
       </nav>
+
+      {/* Tutorial Overlay */}
+      {showTutorial && (
+        <div className="fixed inset-0 z-[100] bg-black/95 backdrop-blur-xl flex items-center justify-center p-6 overflow-y-auto">
+          <div className="bg-[#0a0c10] border border-white/10 rounded-[40px] max-w-2xl w-full p-8 relative shadow-2xl space-y-8 animate-in zoom-in duration-300">
+            <button onClick={() => setShowTutorial(false)} className="absolute top-6 right-6 p-2 bg-white/5 rounded-full hover:bg-white/10 transition-colors">
+              <X className="w-5 h-5 text-slate-400" />
+            </button>
+            
+            <div className="space-y-2">
+              <div className="flex items-center gap-4 text-amber-500">
+                <MailPlus className="w-8 h-8" />
+                <h2 className="text-2xl font-black uppercase tracking-tight">แก้ปัญหาโควตาเต็ม / No Project</h2>
+              </div>
+              <p className="text-slate-500 text-sm">ทำตามขั้นตอนนี้เพื่อกลับมาเจนภาพต่อได้ทันทีครับ</p>
+            </div>
+
+            <div className="space-y-6">
+              <div className="p-6 rounded-3xl bg-white/5 border border-white/5 space-y-4">
+                <h3 className="text-amber-500 text-xs font-black uppercase tracking-widest flex items-center gap-2">
+                  <ArrowRightCircle className="w-4 h-4" /> ขั้นตอนการสร้าง API Key ใหม่
+                </h3>
+                <div className="space-y-4 text-sm text-slate-300">
+                  <div className="flex gap-4">
+                    <span className="w-6 h-6 rounded-full bg-amber-500 text-black flex items-center justify-center font-black text-[10px] shrink-0">1</span>
+                    <p>เข้าหน้า <a href="https://aistudio.google.com/app/apikey" target="_blank" className="text-amber-500 underline font-bold">Google AI Studio</a> (ถ้าเต็มให้ Logout แล้วใช้เมลอื่นเข้าครับ)</p>
+                  </div>
+                  <div className="flex gap-4">
+                    <span className="w-6 h-6 rounded-full bg-amber-500 text-black flex items-center justify-center font-black text-[10px] shrink-0">2</span>
+                    <p><b>สำคัญ:</b> ให้กดปุ่มสีฟ้าที่เขียนว่า <span className="bg-blue-600 text-white px-2 py-0.5 rounded text-[10px] font-bold">Create API key in new project</span> (ปุ่มนี้จะสร้างโปรเจกต์ให้คุณอัตโนมัติ ไม่ต้องเลือกเอง)</p>
+                  </div>
+                  <div className="flex gap-4">
+                    <span className="w-6 h-6 rounded-full bg-amber-500 text-black flex items-center justify-center font-black text-[10px] shrink-0">3</span>
+                    <p>ถ้ามันขึ้นหน้าจอเหมือนในรูปที่คุณส่งมา (No Projects) ให้ **กดยกเลิก (X)** ออกไปก่อน แล้วหาปุ่ม **"Create API key in new project"** ที่หน้าหลักแทนครับ</p>
+                  </div>
+                </div>
+              </div>
+
+              <div className="p-6 rounded-3xl bg-red-500/5 border border-red-500/10 space-y-3">
+                <h3 className="text-red-400 text-[10px] font-black uppercase tracking-widest flex items-center gap-2">
+                  <AlertTriangle className="w-4 h-4" /> หากยังขึ้น No Cloud Projects Available
+                </h3>
+                <p className="text-[11px] text-slate-400 leading-relaxed">
+                  บางครั้งเมลบริษัทหรือเมลสถานศึกษาจะถูกบล็อกไม่ให้สร้างโปรเจกต์ครับ แนะนำให้ใช้ **Gmail ส่วนตัว (@gmail.com)** จะกดครั้งเดียวผ่านเลยครับผม
+                </p>
+              </div>
+            </div>
+
+            <div className="flex gap-3">
+               <button onClick={() => setShowTutorial(false)} className="flex-1 py-4 bg-amber-500 text-black font-black uppercase text-xs tracking-widest rounded-2xl shadow-lg shadow-amber-500/20 hover:scale-[1.02] transition-transform">เข้าใจแล้วครับ</button>
+               <a href="https://aistudio.google.com/app/apikey" target="_blank" className="flex-1 py-4 bg-white/5 text-white font-bold text-xs flex items-center justify-center gap-2 rounded-2xl hover:bg-white/10 transition-colors">ไปหน้า AI Studio <ExternalLink className="w-4 h-4" /></a>
+            </div>
+          </div>
+        </div>
+      )}
 
       <main className="flex-1 container mx-auto p-4 lg:p-8 grid lg:grid-cols-12 gap-8">
         <div className="lg:col-span-4 space-y-4">
@@ -244,7 +311,7 @@ const App: React.FC = () => {
               />
             </div>
 
-            {/* 04. Config */}
+            {/* 04. Style & Mode */}
             <div className="bg-white/5 p-5 rounded-[30px] border border-white/5 space-y-4">
               <label className="text-[11px] font-black text-amber-500 uppercase tracking-[0.2em] flex items-center gap-2">
                 <Maximize2 className="w-4 h-4" /> 04. สไตล์และโหมด
@@ -269,35 +336,29 @@ const App: React.FC = () => {
                   {highQuality && (
                     <div className="flex items-start gap-2 text-[9px] text-amber-500/80 leading-tight">
                       <Info className="w-3 h-3 shrink-0" />
-                      <span>คำเตือน: โหมด Pro จำกัดการสร้างเพียง 2 ภาพ/นาที และโควตารายวันน้อยกว่าปกติ</span>
+                      <span>คำเตือน: โหมด Pro โควตาน้อย แนะนำให้สลับใช้รุ่น Flash แทนหากต้องการเจนบ่อยๆ</span>
                     </div>
                   )}
                 </div>
               </div>
             </div>
 
-            {/* Quota Recovery UI */}
+            {/* Error Message */}
             {error === "QUOTA_ERROR" ? (
-              <div className="bg-amber-500/10 border border-amber-500/30 p-6 rounded-[30px] space-y-4 shadow-xl animate-in fade-in slide-in-from-bottom-2">
+              <div className="bg-amber-500/10 border border-amber-500/30 p-6 rounded-[30px] space-y-4 animate-in slide-in-from-bottom duration-500">
                 <div className="flex items-start gap-3 text-amber-500">
-                  <Clock className="w-6 h-6 shrink-0 mt-1 animate-pulse" />
+                  <AlertTriangle className="w-6 h-6 shrink-0 mt-1" />
                   <div className="space-y-1">
-                    <p className="text-xs font-black uppercase tracking-wider">โควตาเต็มชั่วคราว! ({cooldown}วิ)</p>
-                    <p className="text-[10px] leading-relaxed">
-                      {highQuality 
-                        ? "คุณกำลังใช้โหมดคุณภาพสูงสุด (Pro) ซึ่งจำกัดเพียง 2 ภาพต่อนาทีครับ แนะนำให้ปิดโหมด PRO เพื่อใช้งานได้ต่อเนื่องขึ้น"
-                        : "ถึงจะใช้คนเดียว แต่การคุยแชทและการสร้างภาพใช้โควตาร่วมกันครับ กรุณารอสักครู่แล้วกดใหม่นะครับ"}
-                    </p>
+                    <p className="text-xs font-black uppercase tracking-wider">โควตาเต็มสนิท! (รอ {cooldown}วิ)</p>
+                    <p className="text-[10px] leading-relaxed">โควตารายวันหมดแล้วครับ แก้ได้โดยการ <b>สลับใช้เมลอื่น</b> มาสร้าง Key ใหม่เท่านั้น</p>
                   </div>
                 </div>
-                {highQuality && (
-                  <button onClick={() => {setHighQuality(false); setError(null); setCooldown(0);}} className="w-full py-3 bg-white/5 border border-white/10 rounded-xl text-[10px] font-bold text-slate-300 hover:bg-white/10 transition-all">
-                    ปิดโหมด Pro เพื่อใช้ต่อได้ทันที
-                  </button>
-                )}
+                <button onClick={() => setShowTutorial(true)} className="w-full py-3 bg-amber-500 text-black rounded-xl text-[10px] font-black uppercase tracking-widest flex items-center justify-center gap-2">
+                   ดูวิธีแก้ No Projects <ArrowRightCircle className="w-4 h-4" />
+                </button>
               </div>
             ) : error && (
-              <div className="bg-red-500/10 border border-red-500/20 p-5 rounded-[30px] flex items-start gap-3 text-red-400">
+              <div className="bg-red-500/10 border border-red-500/20 p-5 rounded-[30px] flex items-start gap-3 text-red-400 animate-in shake duration-500">
                 <AlertTriangle className="w-5 h-5 shrink-0 mt-0.5" />
                 <p className="text-[11px] font-bold leading-relaxed">{error}</p>
               </div>
@@ -332,7 +393,7 @@ const App: React.FC = () => {
                 </div>
                 <div className="space-y-2">
                   <p className="text-amber-500 font-black animate-pulse text-xs tracking-[0.4em] uppercase">AI is Creating Your Art</p>
-                  <p className="text-[10px] text-slate-600 font-medium italic">"กำลังประมวลผลด้วยพลังของ {highQuality ? 'Pro' : 'Flash'} Model..."</p>
+                  <p className="text-[10px] text-slate-600 font-medium italic">"กำลังดึงข้อมูล... โปรดรอสักครู่"</p>
                 </div>
              </div>
            ) : currentPoster ? (
@@ -360,7 +421,7 @@ const App: React.FC = () => {
                 <div className="w-44 h-44 bg-white/[0.03] rounded-full flex items-center justify-center mx-auto border border-white/5 shadow-inner">
                   <ImageIcon className="w-20 h-20 text-slate-600" />
                 </div>
-                <p className="text-xs font-black tracking-[0.8em] uppercase text-slate-500">Ready to Design</p>
+                <p className="text-xs font-black tracking-[0.8em] uppercase text-slate-500 text-center">Ready to Design<br/><span className="text-[9px] font-medium tracking-normal lowercase opacity-50">อัปโหลดภาพสินค้าและกดเริ่มสร้างได้เลย</span></p>
              </div>
            )}
            <canvas ref={canvasRef} className="hidden" />
