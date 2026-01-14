@@ -2,15 +2,26 @@
 import { GoogleGenAI, Type } from "@google/genai";
 import { GenerationConfig } from "../types";
 
+// Helper สำหรับสร้าง Instance ของ AI โดยใช้ Key ล่าสุด
+const getAI = () => {
+  const apiKey = process.env.API_KEY;
+  if (!apiKey) throw new Error("MISSING_KEY");
+  return new GoogleGenAI({ apiKey });
+};
+
 export const generatePosterSlogan = async (productInfo: string): Promise<string[]> => {
-  const ai = new GoogleGenAI({ apiKey: process.env.API_KEY });
+  const ai = getAI();
   
   try {
     const response = await ai.models.generateContent({
       model: 'gemini-3-flash-preview',
-      contents: `Generate 5 catchy, short, and striking marketing slogans in Thai for this product: "${productInfo}". 
-      The slogans should be suitable for a commercial poster. Focus on the product's identity and premium feel. 
-      Keep them under 10 words each.`,
+      contents: [{
+        parts: [{
+          text: `Generate 5 catchy, short, and striking marketing slogans in Thai for this product: "${productInfo}". 
+          The slogans should be suitable for a commercial poster. Focus on the product's identity and premium feel. 
+          Keep them under 10 words each. Return as a JSON array of strings.`
+        }]
+      }],
       config: {
         responseMimeType: "application/json",
         responseSchema: {
@@ -19,34 +30,44 @@ export const generatePosterSlogan = async (productInfo: string): Promise<string[
         }
       }
     });
-    return JSON.parse(response.text || '[]');
+    
+    const text = response.text;
+    return JSON.parse(text || '[]');
   } catch (e: any) {
-    const msg = e?.message || "";
-    if (msg.includes("429")) throw new Error("QUOTA_EXCEEDED");
-    return [];
+    console.error("Slogan Error:", e);
+    if (e?.message?.includes("429")) throw new Error("QUOTA_EXCEEDED");
+    throw e;
   }
 };
 
 export const generatePosterImage = async (config: GenerationConfig): Promise<string> => {
-  const ai = new GoogleGenAI({ apiKey: process.env.API_KEY });
+  const ai = getAI();
   
-  // 1. แปลรายละเอียดสินค้าจากไทยเป็นอังกฤษเพื่อความแม่นยำของโมเดลรูปภาพ
-  let translatedPrompt = config.prompt;
+  // 1. แปลและปรับปรุง Prompt ด้วยโมเดลข้อความก่อน
+  let enhancedPrompt = config.prompt;
   try {
     const translationResult = await ai.models.generateContent({
       model: 'gemini-3-flash-preview',
-      contents: `Translate and enhance this Thai product description into a highly descriptive English visual prompt for a professional studio product shot: "${config.prompt}". Focus on lighting, textures, and premium atmosphere. Return only the English prompt.`,
+      contents: [{
+        parts: [{
+          text: `Translate and enhance this Thai product description into a professional English visual prompt for product photography: "${config.prompt}". Include keywords for 8k, studio lighting, and high-end feel. Return only the English text.`
+        }]
+      }],
     });
-    translatedPrompt = translationResult.text || config.prompt;
+    enhancedPrompt = translationResult.text || config.prompt;
   } catch (e) {
-    console.warn("Translation failed, using original prompt");
+    console.warn("Translation fallback used");
   }
 
-  const modelName = 'gemini-2.5-flash-image';
-  let parts: any[] = [];
+  // 2. เตรียม Parts สำหรับโมเดลรูปภาพ
+  const parts: any[] = [];
   
+  // ใส่รูปสินค้าถ้ามี (ต้องเป็น Base64 ที่ไม่มี Prefix data:image/...)
   if (config.baseImage) {
-    const base64Data = config.baseImage.split(',')[1];
+    const base64Data = config.baseImage.includes(',') 
+      ? config.baseImage.split(',')[1] 
+      : config.baseImage;
+      
     parts.push({
       inlineData: {
         data: base64Data,
@@ -55,24 +76,24 @@ export const generatePosterImage = async (config: GenerationConfig): Promise<str
     });
   }
 
-  // ปรับปรุงคำสั่งเรื่องการลบพื้นหลังให้เข้มงวดขึ้น
-  let bgInstruction = config.removeBackground 
-    ? "MANDATORY: COMPLETELY REMOVE the original background of the provided product image. EXTRACT ONLY the product subject and place it realistically into the new generated environment. The new background must be entirely different as per the style."
-    : "Keep the product and its immediate surroundings from the original image and blend them naturally into the new background style.";
+  // คำสั่งสำหรับลบพื้นหลังและจัดฉาก
+  const bgPrompt = config.removeBackground 
+    ? "Isolate the product and place it in a brand new, luxurious studio background." 
+    : "Enhance the overall aesthetic while keeping the original context.";
 
-  let instruction = `You are a world-class advertising creative director.
-  TASK: Design a high-impact, professional marketing poster.
-  STYLE DESCRIPTION: ${config.style}
-  ENVIRONMENT & SUBJECT: ${translatedPrompt}
-  BACKGROUND HANDLING: ${bgInstruction}
-  TYPOGRAPHY: Integrate the text "${config.posterText || ''}" into the scene using 3D, premium font style that matches the lighting.`;
+  const fullPrompt = `Create a high-end commercial poster image.
+  STYLE: ${config.style}
+  PRODUCT DESCRIPTION: ${enhancedPrompt}
+  BACKGROUND ACTION: ${bgPrompt}
+  QUALITY: High definition, realistic textures, cinematic lighting.
+  Note: Ensure the product remains the central focus of the image.`;
 
-  parts.push({ text: instruction });
+  parts.push({ text: fullPrompt });
 
   try {
     const response = await ai.models.generateContent({
-      model: modelName,
-      contents: { parts },
+      model: 'gemini-2.5-flash-image',
+      contents: [{ parts }],
       config: {
         imageConfig: {
           aspectRatio: config.aspectRatio as any
@@ -80,36 +101,39 @@ export const generatePosterImage = async (config: GenerationConfig): Promise<str
       }
     });
 
-    let imageUrl = '';
-    if (response.candidates?.[0]?.content?.parts) {
-      for (const part of response.candidates[0].content.parts) {
-        if (part.inlineData) {
-          imageUrl = `data:${part.inlineData.mimeType};base64,${part.inlineData.data}`;
-          break;
-        }
+    // ค้นหา Part ที่เป็นรูปภาพจาก Candidates
+    const candidate = response.candidates?.[0];
+    if (!candidate) throw new Error("NO_RESPONSE_FROM_AI");
+
+    for (const part of candidate.content.parts) {
+      if (part.inlineData?.data) {
+        return `data:${part.inlineData.mimeType};base64,${part.inlineData.data}`;
       }
     }
 
-    if (!imageUrl) throw new Error("API_RETURNED_NO_IMAGE");
-    return imageUrl;
+    throw new Error("API_RETURNED_NO_IMAGE");
   } catch (error: any) {
+    console.error("Gemini Generation Error:", error);
     const msg = error?.message || "";
-    console.error("Gemini Error:", error);
     
     if (msg.includes("429")) throw new Error("QUOTA_EXCEEDED");
-    if (msg.includes("Requested entity was not found")) throw new Error("INVALID_KEY");
+    if (msg.includes("API Key") || msg.includes("MISSING_KEY")) throw new Error("MISSING_KEY");
     if (msg.includes("safety")) throw new Error("SAFETY_BLOCK");
     
-    throw new Error(msg || "UNKNOWN_ERROR");
+    throw error;
   }
 };
 
 export const hasApiKey = async (): Promise<boolean> => {
-  // @ts-ignore
-  if (window.aistudio && typeof window.aistudio.hasSelectedApiKey === 'function') {
+  // ตรวจสอบทั้ง aistudio global และ process.env
+  try {
     // @ts-ignore
-    return await window.aistudio.hasSelectedApiKey();
-  }
+    if (window.aistudio && typeof window.aistudio.hasSelectedApiKey === 'function') {
+      // @ts-ignore
+      const hasKey = await window.aistudio.hasSelectedApiKey();
+      if (hasKey) return true;
+    }
+  } catch (e) {}
   return !!process.env.API_KEY;
 };
 
