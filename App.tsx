@@ -44,7 +44,7 @@ const App: React.FC = () => {
     try {
       // imgly background removal works with images and returns a blob
       const blob = await removeBackground(productImage, {
-        progress: (key, current, total) => {
+        progress: (key: string, current: number, total: number) => {
           console.log(`Processing: ${key} ${current}/${total}`);
         }
       });
