@@ -1,7 +1,6 @@
 import { GoogleGenAI, Type } from "@google/genai";
 import { GenerationConfig } from "../types";
 
-// ฟังก์ชันสร้าง Client โดยใช้ค่าที่ถูกฉีดมาจาก Vite
 const getAIClient = () => {
   const apiKey = process.env.API_KEY;
   if (!apiKey || apiKey === "") {
@@ -10,7 +9,6 @@ const getAIClient = () => {
   return new GoogleGenAI({ apiKey });
 };
 
-// ใช้ gemini-3-flash-preview สำหรับงานข้อความ
 export const generatePosterSlogan = async (productInfo: string): Promise<string[]> => {
   try {
     const ai = getAIClient();
@@ -34,23 +32,24 @@ export const generatePosterSlogan = async (productInfo: string): Promise<string[
     return text ? JSON.parse(text) : ["สินค้าคุณภาพดี", "โปรโมชั่นพิเศษ"];
   } catch (e: any) {
     console.error("Slogan Error:", e);
-    if (e.message === "MISSING_API_KEY") throw e;
     return ["สินค้าคุณภาพดี", "โปรโมชั่นพิเศษ", "ของเด็ดเมืองน่าน", "พรีเมียมเกรด A", "คุ้มค่าราคาประหยัด"];
   }
 };
 
-// เลือกโมเดลตามคุณภาพที่ผู้ใช้ต้องการ
 export const generatePosterImage = async (config: GenerationConfig): Promise<string> => {
-  const modelName = config.highQuality ? 'gemini-3-pro-image-preview' : 'gemini-2.5-flash-image';
+  // บังคับเลือกโมเดลให้ชัดเจน
+  const modelName = config.highQuality === true ? 'gemini-3-pro-image-preview' : 'gemini-2.5-flash-image';
+  console.log(`[AI] กำลังใช้งานโมเดล: ${modelName} (โหมดคุณภาพสูง: ${config.highQuality})`);
+  
   const ai = getAIClient();
   const parts: any[] = [];
   
   const stylePrompt = config.style || "Professional product photography";
   const finalPrompt = `Professional commercial poster for "${config.prompt}". 
-    Text context: "${config.posterText || ''}". 
+    Text context in poster: "${config.posterText || ''}". 
     Style: ${stylePrompt}. 
-    High resolution, 8k, studio lighting. 
-    ${config.removeBackground ? 'Isolated product on a beautiful new artistic background.' : ''}`;
+    High resolution, 8k, studio lighting, product display. 
+    ${config.removeBackground ? 'Isolated product on a beautiful new artistic background matching the style.' : ''}`;
 
   if (config.baseImage) {
     const base64Data = config.baseImage.split(',')[1] || config.baseImage;
@@ -71,14 +70,12 @@ export const generatePosterImage = async (config: GenerationConfig): Promise<str
       config: {
         imageConfig: {
           aspectRatio: config.aspectRatio as any,
-          ...(modelName === 'gemini-3-pro-image-preview' ? { imageSize: '2K' } : {})
+          ...(modelName === 'gemini-3-pro-image-preview' ? { imageSize: '1K' } : {})
         }
       }
     });
 
-    // แก้ไข Error TS2532: ใช้ optional chaining ประสิทธิภาพสูงเพื่อให้ TypeScript build ผ่าน
     const firstCandidateParts = response.candidates?.[0]?.content?.parts;
-    
     if (firstCandidateParts) {
       for (const part of firstCandidateParts) {
         if (part.inlineData?.data) {
@@ -89,7 +86,7 @@ export const generatePosterImage = async (config: GenerationConfig): Promise<str
     
     throw new Error("AI_RETURNED_NO_IMAGE");
   } catch (error: any) {
-    console.error("Gemini API Error:", error);
+    console.error("Gemini API Error Detail:", error);
     throw error;
   }
 };
