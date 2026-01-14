@@ -14,17 +14,15 @@ import {
   Type as TypeIcon,
   Rocket,
   ShieldCheck,
-  Key,
   ExternalLink,
   CheckCircle2,
   Clock,
-  Info,
-  RotateCcw,
-  BarChart3,
-  BookOpen,
-  MailPlus,
   ArrowRightCircle,
-  HelpCircle
+  HelpCircle,
+  Check,
+  MonitorOff,
+  StepForward,
+  Zap
 } from 'lucide-react';
 import { AspectRatio, GeneratedPoster } from './types';
 import { STYLE_PRESETS, ASPECT_RATIOS } from './constants';
@@ -63,7 +61,7 @@ const App: React.FC = () => {
       }
     };
     checkKeyStatus();
-    const interval = setInterval(checkKeyStatus, 3000);
+    const interval = setInterval(checkKeyStatus, 2000);
     return () => clearInterval(interval);
   }, []);
 
@@ -73,6 +71,11 @@ const App: React.FC = () => {
       return () => clearTimeout(timer);
     }
   }, [cooldown]);
+
+  const resetQuotaError = () => {
+    setError(null);
+    setCooldown(0);
+  };
 
   const handleGenerate = async () => {
     if (cooldown > 0) return;
@@ -105,11 +108,16 @@ const App: React.FC = () => {
       setError(null);
     } catch (err: any) {
       const msg = err.message || "";
+      console.error("Generate Error Details:", err);
+      
       if (msg.includes("429") || msg.includes("RESOURCE_EXHAUSTED") || msg.includes("Quota")) {
         setError("QUOTA_ERROR");
         setCooldown(60); 
+      } else if (msg.includes("404") || msg.includes("not found")) {
+        setError("KEY_NOT_FOUND");
+        if (isAiStudio) await openKeySelector();
       } else {
-        setError(msg || "เกิดข้อผิดพลาดในการเชื่อมต่อ");
+        setError(msg || "เกิดข้อผิดพลาดในการเชื่อมต่อ กรุณาลองใหม่");
       }
     } finally {
       setIsGenerating(false);
@@ -161,74 +169,82 @@ const App: React.FC = () => {
         <div className="flex items-center gap-4">
           <button 
             onClick={() => setShowTutorial(true)}
-            className="flex items-center gap-2 px-3 py-1.5 rounded-full bg-white/5 border border-white/10 text-[10px] font-bold text-amber-500 hover:bg-amber-500/10 transition-all shadow-lg shadow-amber-500/5"
+            className="flex items-center gap-2 px-4 py-2 rounded-full bg-amber-500 text-black text-[11px] font-black uppercase tracking-widest hover:bg-amber-400 transition-all shadow-xl shadow-amber-500/10 animate-pulse"
           >
-            <HelpCircle className="w-3 h-3" /> ติดปัญหาโควตาเต็ม?
+            <HelpCircle className="w-4 h-4" /> ดูวิธีแก้: ถ้าติดหน้าป๊อปอัป
           </button>
-          <div className={`hidden md:flex items-center gap-2 px-3 py-1.5 rounded-full border ${hasPrivateKey ? 'bg-green-500/10 border-green-500/30 text-green-400' : 'bg-white/5 border-white/10 text-slate-500'}`}>
-            {hasPrivateKey ? <CheckCircle2 className="w-3 h-3" /> : <div className="w-2 h-2 rounded-full bg-slate-700" />}
-            <span className="text-[9px] font-black uppercase tracking-widest">
-              {hasPrivateKey ? 'KEY ACTIVE' : 'NO KEY'}
+          
+          <div className={`hidden md:flex items-center gap-2 px-4 py-2 rounded-full border transition-all ${hasPrivateKey ? 'bg-green-500/10 border-green-500/30 text-green-400 shadow-[0_0_15px_rgba(34,197,94,0.1)]' : 'bg-white/5 border-white/10 text-slate-500'}`}>
+            {hasPrivateKey ? <CheckCircle2 className="w-3.5 h-3.5" /> : <RefreshCw className="w-3.5 h-3.5 animate-spin opacity-50" />}
+            <span className="text-[10px] font-black uppercase tracking-widest">
+              {hasPrivateKey ? 'API KEY ACTIVE' : 'WAITING FOR KEY'}
             </span>
           </div>
+
           {isAiStudio && (
-            <button onClick={openKeySelector} className="p-2 bg-white/5 hover:bg-white/10 rounded-full border border-white/10 transition-colors group">
-              <Settings2 className="w-4 h-4 text-slate-400 group-hover:text-amber-500 transition-colors" />
+            <button onClick={openKeySelector} className="p-2.5 bg-white/5 hover:bg-amber-500 hover:text-black rounded-full border border-white/10 transition-all group">
+              <Settings2 className="w-4 h-4" />
             </button>
           )}
         </div>
       </nav>
 
-      {/* Tutorial Overlay */}
       {showTutorial && (
-        <div className="fixed inset-0 z-[100] bg-black/95 backdrop-blur-xl flex items-center justify-center p-6 overflow-y-auto">
-          <div className="bg-[#0a0c10] border border-white/10 rounded-[40px] max-w-2xl w-full p-8 relative shadow-2xl space-y-8 animate-in zoom-in duration-300">
+        <div className="fixed inset-0 z-[100] bg-black/95 backdrop-blur-2xl flex items-center justify-center p-6 overflow-y-auto">
+          <div className="bg-[#0a0c10] border border-white/10 rounded-[40px] max-w-4xl w-full p-8 relative shadow-2xl space-y-8 animate-in zoom-in duration-300">
             <button onClick={() => setShowTutorial(false)} className="absolute top-6 right-6 p-2 bg-white/5 rounded-full hover:bg-white/10 transition-colors">
               <X className="w-5 h-5 text-slate-400" />
             </button>
             
-            <div className="space-y-2">
-              <div className="flex items-center gap-4 text-amber-500">
-                <MailPlus className="w-8 h-8" />
-                <h2 className="text-2xl font-black uppercase tracking-tight">แก้ปัญหาโควตาเต็ม / No Project</h2>
+            <div className="space-y-4 text-center">
+              <div className="flex items-center justify-center gap-4 text-amber-500">
+                <MonitorOff className="w-10 h-10" />
+                <h2 className="text-3xl font-black uppercase tracking-tight">แก้ปัญหา "ป๊อปอัปเด้งซ้ำ"</h2>
               </div>
-              <p className="text-slate-500 text-sm">ทำตามขั้นตอนนี้เพื่อกลับมาเจนภาพต่อได้ทันทีครับ</p>
+              <p className="text-slate-400 text-sm leading-relaxed max-w-2xl mx-auto italic">
+                "ถ้าคุณกดปุ่มกลางจอ มันจะเด้งถามหา Project ตลอดเวลา... ให้เปลี่ยนมาทำตามนี้ครับ"
+              </p>
             </div>
 
-            <div className="space-y-6">
-              <div className="p-6 rounded-3xl bg-white/5 border border-white/5 space-y-4">
-                <h3 className="text-amber-500 text-xs font-black uppercase tracking-widest flex items-center gap-2">
-                  <ArrowRightCircle className="w-4 h-4" /> ขั้นตอนการสร้าง API Key ใหม่
-                </h3>
-                <div className="space-y-4 text-sm text-slate-300">
-                  <div className="flex gap-4">
-                    <span className="w-6 h-6 rounded-full bg-amber-500 text-black flex items-center justify-center font-black text-[10px] shrink-0">1</span>
-                    <p>เข้าหน้า <a href="https://aistudio.google.com/app/apikey" target="_blank" className="text-amber-500 underline font-bold">Google AI Studio</a> (ถ้าเต็มให้ Logout แล้วใช้เมลอื่นเข้าครับ)</p>
-                  </div>
-                  <div className="flex gap-4">
-                    <span className="w-6 h-6 rounded-full bg-amber-500 text-black flex items-center justify-center font-black text-[10px] shrink-0">2</span>
-                    <p><b>สำคัญ:</b> ให้กดปุ่มสีฟ้าที่เขียนว่า <span className="bg-blue-600 text-white px-2 py-0.5 rounded text-[10px] font-bold">Create API key in new project</span> (ปุ่มนี้จะสร้างโปรเจกต์ให้คุณอัตโนมัติ ไม่ต้องเลือกเอง)</p>
-                  </div>
-                  <div className="flex gap-4">
-                    <span className="w-6 h-6 rounded-full bg-amber-500 text-black flex items-center justify-center font-black text-[10px] shrink-0">3</span>
-                    <p>ถ้ามันขึ้นหน้าจอเหมือนในรูปที่คุณส่งมา (No Projects) ให้ **กดยกเลิก (X)** ออกไปก่อน แล้วหาปุ่ม **"Create API key in new project"** ที่หน้าหลักแทนครับ</p>
-                  </div>
-                </div>
+            <div className="grid md:grid-cols-3 gap-6">
+              <div className="p-6 rounded-3xl bg-red-500/10 border border-red-500/20 space-y-4">
+                <div className="w-10 h-10 rounded-full bg-red-500 text-white flex items-center justify-center font-black text-lg">1</div>
+                <h3 className="text-red-400 text-xs font-black uppercase tracking-widest">ปิดป๊อปอัปทิ้ง</h3>
+                <p className="text-[12px] text-slate-300 leading-relaxed">
+                  ถ้าเห็นหน้าต่าง <b>"No Cloud Projects"</b> ให้กดปิดทิ้งทันที อย่าไปกด Import ครับ
+                </p>
               </div>
 
-              <div className="p-6 rounded-3xl bg-red-500/5 border border-red-500/10 space-y-3">
-                <h3 className="text-red-400 text-[10px] font-black uppercase tracking-widest flex items-center gap-2">
-                  <AlertTriangle className="w-4 h-4" /> หากยังขึ้น No Cloud Projects Available
-                </h3>
-                <p className="text-[11px] text-slate-400 leading-relaxed">
-                  บางครั้งเมลบริษัทหรือเมลสถานศึกษาจะถูกบล็อกไม่ให้สร้างโปรเจกต์ครับ แนะนำให้ใช้ **Gmail ส่วนตัว (@gmail.com)** จะกดครั้งเดียวผ่านเลยครับผม
+              <div className="p-6 rounded-3xl bg-blue-500/10 border border-blue-500/20 space-y-4">
+                <div className="w-10 h-10 rounded-full bg-blue-500 text-white flex items-center justify-center font-black text-lg">2</div>
+                <h3 className="text-blue-400 text-xs font-black uppercase tracking-widest">กดปุ่ม "ขวาบน"</h3>
+                <p className="text-[12px] text-slate-300 leading-relaxed">
+                  มองไปที่ **มุมขวาบน** ของหน้าจอ (แถวรูปโปรไฟล์) จะเห็นปุ่ม <b>"Create API key"</b> สีเทาๆ เล็กๆ ครับ
+                </p>
+              </div>
+
+              <div className="p-6 rounded-3xl bg-green-500/10 border border-green-500/20 space-y-4">
+                <div className="w-10 h-10 rounded-full bg-green-500 text-white flex items-center justify-center font-black text-lg">3</div>
+                <h3 className="text-green-400 text-xs font-black uppercase tracking-widest">เลือก "New Project"</h3>
+                <p className="text-[12px] text-slate-300 leading-relaxed">
+                  เลือกบรรทัดแรก: <b>"Create API key in new project"</b> แล้วรอระบบเจนรหัสให้จนเสร็จครับ
                 </p>
               </div>
             </div>
 
-            <div className="flex gap-3">
-               <button onClick={() => setShowTutorial(false)} className="flex-1 py-4 bg-amber-500 text-black font-black uppercase text-xs tracking-widest rounded-2xl shadow-lg shadow-amber-500/20 hover:scale-[1.02] transition-transform">เข้าใจแล้วครับ</button>
-               <a href="https://aistudio.google.com/app/apikey" target="_blank" className="flex-1 py-4 bg-white/5 text-white font-bold text-xs flex items-center justify-center gap-2 rounded-2xl hover:bg-white/10 transition-colors">ไปหน้า AI Studio <ExternalLink className="w-4 h-4" /></a>
+            <div className="bg-amber-500/5 border border-amber-500/20 p-6 rounded-3xl">
+               <div className="flex items-center gap-4 text-amber-500 mb-4">
+                 <StepForward className="w-5 h-5" />
+                 <h3 className="text-[11px] font-black uppercase tracking-widest text-white">ขั้นตอนหลังได้ Key มาแล้ว</h3>
+               </div>
+               <p className="text-[13px] text-slate-400 leading-relaxed">
+                 เมื่อเจนรหัสเสร็จแล้ว ให้กลับมาที่หน้านี้ แล้วกดที่ปุ่ม <b>"Settings" (รูปเฟือง)</b> ที่มุมขวาบนของแอปเรา แล้วเลือกรหัสที่เพิ่งสร้างมาครับ ระบบก็จะเริ่มทำงานทันที!
+               </p>
+            </div>
+
+            <div className="flex gap-4">
+               <button onClick={() => setShowTutorial(false)} className="flex-1 py-5 bg-amber-500 text-black font-black uppercase text-xs tracking-widest rounded-2xl shadow-xl hover:bg-amber-400 transition-all">เข้าใจแล้วครับ!</button>
+               <a href="https://aistudio.google.com/app/apikey" target="_blank" className="flex-1 py-5 bg-white/5 text-white font-bold text-xs flex items-center justify-center gap-2 rounded-2xl hover:bg-white/10 transition-colors border border-white/5">ไปหน้า Google AI Studio <ExternalLink className="w-4 h-4" /></a>
             </div>
           </div>
         </div>
@@ -238,7 +254,7 @@ const App: React.FC = () => {
         <div className="lg:col-span-4 space-y-4">
           <div className="glass rounded-[40px] p-6 space-y-6 border border-white/10 shadow-2xl h-[calc(100vh-140px)] overflow-y-auto custom-scrollbar">
             
-            {/* 01. Logo Section */}
+            {/* Poster Builder UI */}
             <div className="bg-amber-500/10 p-5 rounded-[30px] border border-amber-500/20 space-y-4 shadow-inner">
               <label className="text-[11px] font-black text-amber-500 uppercase tracking-[0.2em] flex items-center gap-2">
                 <ShieldCheck className="w-4 h-4" /> 01. โลโก้แบรนด์
@@ -266,7 +282,6 @@ const App: React.FC = () => {
               </div>
             </div>
 
-            {/* 02. Product Image */}
             <div className="bg-white/5 p-5 rounded-[30px] border border-white/5 space-y-3">
               <label className="text-[11px] font-black text-amber-500 uppercase tracking-[0.2em] flex items-center gap-2">
                 <Layers className="w-4 h-4" /> 02. รูปภาพสินค้า
@@ -291,7 +306,6 @@ const App: React.FC = () => {
               </label>
             </div>
 
-            {/* 03. Poster Text */}
             <div className="bg-white/5 p-5 rounded-[30px] border border-white/5 space-y-4">
               <label className="text-[11px] font-black text-amber-500 uppercase tracking-[0.2em] flex items-center gap-2">
                 <TypeIcon className="w-4 h-4" /> 03. ข้อความในโปสเตอร์
@@ -311,7 +325,6 @@ const App: React.FC = () => {
               />
             </div>
 
-            {/* 04. Style & Mode */}
             <div className="bg-white/5 p-5 rounded-[30px] border border-white/5 space-y-4">
               <label className="text-[11px] font-black text-amber-500 uppercase tracking-[0.2em] flex items-center gap-2">
                 <Maximize2 className="w-4 h-4" /> 04. สไตล์และโหมด
@@ -333,28 +346,36 @@ const App: React.FC = () => {
                       <div className={`absolute top-1 w-3 h-3 bg-white rounded-full transition-all ${highQuality ? 'right-1' : 'left-1'}`} />
                     </button>
                   </div>
-                  {highQuality && (
-                    <div className="flex items-start gap-2 text-[9px] text-amber-500/80 leading-tight">
-                      <Info className="w-3 h-3 shrink-0" />
-                      <span>คำเตือน: โหมด Pro โควตาน้อย แนะนำให้สลับใช้รุ่น Flash แทนหากต้องการเจนบ่อยๆ</span>
-                    </div>
-                  )}
                 </div>
               </div>
             </div>
 
-            {/* Error Message */}
             {error === "QUOTA_ERROR" ? (
-              <div className="bg-amber-500/10 border border-amber-500/30 p-6 rounded-[30px] space-y-4 animate-in slide-in-from-bottom duration-500">
+              <div className="bg-amber-500/10 border border-amber-500/30 p-6 rounded-[30px] space-y-5 animate-in slide-in-from-bottom duration-500 shadow-xl">
                 <div className="flex items-start gap-3 text-amber-500">
                   <AlertTriangle className="w-6 h-6 shrink-0 mt-1" />
                   <div className="space-y-1">
-                    <p className="text-xs font-black uppercase tracking-wider">โควตาเต็มสนิท! (รอ {cooldown}วิ)</p>
-                    <p className="text-[10px] leading-relaxed">โควตารายวันหมดแล้วครับ แก้ได้โดยการ <b>สลับใช้เมลอื่น</b> มาสร้าง Key ใหม่เท่านั้น</p>
+                    <p className="text-xs font-black uppercase tracking-wider">โควตาเต็มแล้วครับ (รอ {cooldown}วิ)</p>
+                    <p className="text-[10px] leading-relaxed italic text-slate-400">ถ้าเพิ่งสร้าง Key ใหม่มา ให้กดปุ่มด้านล่างเพื่อเริ่มใหม่ทันทีครับ</p>
                   </div>
                 </div>
-                <button onClick={() => setShowTutorial(true)} className="w-full py-3 bg-amber-500 text-black rounded-xl text-[10px] font-black uppercase tracking-widest flex items-center justify-center gap-2">
-                   ดูวิธีแก้ No Projects <ArrowRightCircle className="w-4 h-4" />
+                <div className="flex flex-col gap-2">
+                  <button onClick={resetQuotaError} className="w-full py-4 bg-amber-500 text-black rounded-2xl text-[10px] font-black uppercase tracking-widest flex items-center justify-center gap-2 shadow-lg hover:scale-[1.02] transition-all">
+                     <Zap className="w-4 h-4 fill-current" /> ฉันเปลี่ยน Key ใหม่แล้ว (เริ่มใหม่ทันที)
+                  </button>
+                  <button onClick={() => setShowTutorial(true)} className="w-full py-3 bg-white/5 text-white/40 rounded-xl text-[9px] font-bold uppercase tracking-widest hover:text-white transition-colors">
+                     ยังหาปุ่มไม่เจอ? กดดูวิธีแก้
+                  </button>
+                </div>
+              </div>
+            ) : error === "KEY_NOT_FOUND" ? (
+              <div className="bg-red-500/10 border border-red-500/30 p-6 rounded-[30px] space-y-4 animate-in shake duration-300">
+                <div className="flex items-start gap-3 text-red-500">
+                  <AlertTriangle className="w-6 h-6 shrink-0" />
+                  <p className="text-xs font-black uppercase tracking-wider">ไม่พบ API Key หรือ Key ไม่ถูกต้อง</p>
+                </div>
+                <button onClick={() => isAiStudio ? openKeySelector() : setShowTutorial(true)} className="w-full py-4 bg-red-500 text-white rounded-xl text-[10px] font-black uppercase tracking-widest flex items-center justify-center gap-2">
+                   {isAiStudio ? "เลือก API Key ใหม่อีกครั้ง" : "ดูวิธีเจนรหัสใหม่"}
                 </button>
               </div>
             ) : error && (
@@ -380,7 +401,7 @@ const App: React.FC = () => {
            <div className="absolute inset-0 bg-gradient-to-tr from-amber-500/5 to-transparent opacity-20"></div>
            
            <div className="absolute top-8 left-8 flex items-center gap-3 opacity-40">
-              <div className={`w-2 h-2 rounded-full ${highQuality ? 'bg-amber-500' : 'bg-blue-500'}`} />
+              <div className={`w-2 h-2 rounded-full ${highQuality ? 'bg-amber-500 shadow-[0_0_10px_rgba(245,158,11,0.5)]' : 'bg-blue-500'}`} />
               <span className="text-[9px] font-black uppercase tracking-[0.2em]">Model: {highQuality ? 'Gemini 3 Pro' : 'Gemini 2.5 Flash'}</span>
            </div>
 

@@ -1,9 +1,18 @@
+
 import { GoogleGenAI, Type } from "@google/genai";
 import { GenerationConfig } from "../types";
 
+/**
+ * ดึง API KEY ล่าสุดจาก Environment
+ */
+const getAIClient = () => {
+  const apiKey = process.env.API_KEY || "";
+  return new GoogleGenAI({ apiKey });
+};
+
 export const generatePosterSlogan = async (productInfo: string): Promise<string[]> => {
   try {
-    const ai = new GoogleGenAI({ apiKey: process.env.API_KEY || "" });
+    const ai = getAIClient();
     const response = await ai.models.generateContent({
       model: 'gemini-3-flash-preview',
       contents: [{
@@ -31,8 +40,8 @@ export const generatePosterSlogan = async (productInfo: string): Promise<string[
 export const generatePosterImage = async (config: GenerationConfig): Promise<string> => {
   const modelName = config.highQuality ? 'gemini-3-pro-image-preview' : 'gemini-2.5-flash-image';
   
-  // ใช้ API Key จาก environment ซึ่งจะถูกอัปเดตอัตโนมัติหากผู้ใช้เลือก Key ใหม่ผ่าน Dialog
-  const ai = new GoogleGenAI({ apiKey: process.env.API_KEY || "" });
+  // สร้างอินสแตนซ์ใหม่ทุกครั้งเพื่อให้แน่ใจว่าใช้ Key ล่าสุดจากระบบ
+  const ai = getAIClient();
   
   const parts: any[] = [];
   const stylePrompt = config.style || "Commercial photography";
@@ -74,10 +83,13 @@ export const generatePosterImage = async (config: GenerationConfig): Promise<str
       }
     }
     
-    throw new Error("AI ไม่สามารถสร้างภาพได้ในขณะนี้");
+    throw new Error("AI ไม่สามารถสร้างภาพได้ในขณะนี้ กรุณาลองใหม่หรือตรวจสอบการตั้งค่า");
   } catch (error: any) {
-    console.error("Gemini Error:", error);
-    throw error;
+    console.error("Gemini API Error Response:", error);
+    
+    // ส่ง Error Message กลับไปให้ App จัดการต่อ
+    const errorMessage = error.message || error.toString() || "";
+    throw new Error(errorMessage);
   }
 };
 
