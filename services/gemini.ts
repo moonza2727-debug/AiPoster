@@ -31,8 +31,11 @@ export const generatePosterSlogan = async (productInfo: string): Promise<string[
       }
     });
     
-    const text = response.text || '[]';
-    return JSON.parse(text);
+    // ใช้ getter .text ตามคำแนะนำของ SDK
+    const responseText = response.text;
+    if (!responseText) return [];
+    
+    return JSON.parse(responseText.trim());
   } catch (e: any) {
     console.error("Slogan Error:", e);
     if (e?.message?.includes("429")) throw new Error("QUOTA_EXCEEDED");
@@ -43,7 +46,7 @@ export const generatePosterSlogan = async (productInfo: string): Promise<string[
 export const generatePosterImage = async (config: GenerationConfig): Promise<string> => {
   const ai = getAI();
   
-  // 1. แปลและปรับปรุง Prompt ด้วยโมเดลข้อความก่อน
+  // 1. แปลและปรับปรุง Prompt
   let enhancedPrompt = config.prompt;
   try {
     const translationResult = await ai.models.generateContent({
@@ -60,14 +63,14 @@ export const generatePosterImage = async (config: GenerationConfig): Promise<str
   }
 
   // 2. เตรียม Parts สำหรับโมเดลรูปภาพ
-  const parts: any[] = [];
+  const contentsParts: any[] = [];
   
   if (config.baseImage) {
     const base64Data = config.baseImage.includes(',') 
       ? config.baseImage.split(',')[1] 
       : config.baseImage;
       
-    parts.push({
+    contentsParts.push({
       inlineData: {
         data: base64Data,
         mimeType: 'image/png'
@@ -86,12 +89,12 @@ export const generatePosterImage = async (config: GenerationConfig): Promise<str
   QUALITY: High definition, realistic textures, cinematic lighting.
   Note: Ensure the product remains the central focus of the image.`;
 
-  parts.push({ text: fullPrompt });
+  contentsParts.push({ text: fullPrompt });
 
   try {
     const response = await ai.models.generateContent({
       model: 'gemini-2.5-flash-image',
-      contents: [{ parts }],
+      contents: [{ parts: contentsParts }],
       config: {
         imageConfig: {
           aspectRatio: config.aspectRatio as any
@@ -99,24 +102,29 @@ export const generatePosterImage = async (config: GenerationConfig): Promise<str
       }
     });
 
-    // ตรวจสอบ Candidates (แก้ปัญหา TS18048)
-    if (!response.candidates || response.candidates.length === 0) {
+    // การตรวจสอบ Candidates แบบละเอียดสูงสุดเพื่อแก้ปัญหา TypeScript Error TS18048
+    const responseCandidates = response.candidates;
+    if (!responseCandidates || responseCandidates.length === 0) {
       throw new Error("API_RETURNED_NO_IMAGE");
     }
 
-    const candidate = response.candidates[0];
-    
-    // ตรวจสอบ Content และ Parts แบบ Explicit เพื่อให้ TypeScript มั่นใจว่ามีข้อมูลจริง
-    if (!candidate.content || !candidate.content.parts || candidate.content.parts.length === 0) {
+    const firstCandidate = responseCandidates[0];
+    const candidateContent = firstCandidate.content;
+    if (!candidateContent) {
       throw new Error("API_RETURNED_NO_IMAGE");
     }
 
-    const candidateParts = candidate.content.parts;
+    const candidateParts = candidateContent.parts;
+    if (!candidateParts || candidateParts.length === 0) {
+      throw new Error("API_RETURNED_NO_IMAGE");
+    }
 
+    // วนลูปหา Part ที่เป็นรูปภาพใน InlineData
     for (const part of candidateParts) {
       if (part.inlineData && part.inlineData.data) {
-        const mimeType = part.inlineData.mimeType || 'image/png';
-        return `data:${mimeType};base64,${part.inlineData.data}`;
+        const data = part.inlineData.data;
+        const mime = part.inlineData.mimeType || 'image/png';
+        return `data:${mime};base64,${data}`;
       }
     }
 
@@ -135,10 +143,9 @@ export const generatePosterImage = async (config: GenerationConfig): Promise<str
 
 export const hasApiKey = async (): Promise<boolean> => {
   try {
-    // @ts-ignore
-    if (window.aistudio && typeof window.aistudio.hasSelectedApiKey === 'function') {
-      // @ts-ignore
-      const hasKey = await window.aistudio.hasSelectedApiKey();
+    const win = window as any;
+    if (win.aistudio && typeof win.aistudio.hasSelectedApiKey === 'function') {
+      const hasKey = await win.aistudio.hasSelectedApiKey();
       if (hasKey) return true;
     }
   } catch (e) {}
@@ -146,10 +153,9 @@ export const hasApiKey = async (): Promise<boolean> => {
 };
 
 export const openKeySelector = async () => {
-  // @ts-ignore
-  if (window.aistudio && typeof window.aistudio.openSelectKey === 'function') {
-    // @ts-ignore
-    await window.aistudio.openSelectKey();
+  const win = window as any;
+  if (win.aistudio && typeof win.aistudio.openSelectKey === 'function') {
+    await win.aistudio.openSelectKey();
     return true;
   }
   return false;

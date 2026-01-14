@@ -24,7 +24,8 @@ import {
   Clock,
   AlertTriangle,
   Eraser,
-  Wand
+  Wand,
+  ExternalLink
 } from 'lucide-react';
 import { AspectRatio, PosterStyle, GeneratedPoster, GenerationConfig } from './types';
 import { STYLE_PRESETS, ASPECT_RATIOS, LOADING_MESSAGES } from './constants';
@@ -115,7 +116,6 @@ const App: React.FC = () => {
         const data = imageData.data;
         for (let i = 0; i < data.length; i += 4) {
           const r = data[i], g = data[i+1], b = data[i+2];
-          // เจาะสีที่ใกล้เคียงขาว
           if (r > 230 && g > 230 && b > 230) {
             data[i + 3] = 0;
           }
@@ -144,7 +144,6 @@ const App: React.FC = () => {
     reader.readAsDataURL(file);
   };
 
-  // Add missing function to toggle logo visibility
   const toggleLogoVisibility = (id: string) => {
     setLogos(prev => prev.map(l => l.id === id ? { ...l, visible: !l.visible } : l));
   };
@@ -181,7 +180,8 @@ const App: React.FC = () => {
   };
 
   const handleGenerate = async () => {
-    if (!isKeySelected && !process.env.API_KEY) {
+    const apiAvailable = await hasApiKey();
+    if (!apiAvailable) {
       handleOpenKey();
       return;
     }
@@ -298,17 +298,27 @@ const App: React.FC = () => {
             <p className="text-[9px] uppercase tracking-widest text-slate-500 font-bold">Nan Smart Creative</p>
           </div>
         </div>
-        <button 
-          onClick={handleOpenKey}
-          className={`flex items-center gap-2 px-5 py-2 rounded-full border transition-all text-[10px] font-black uppercase ${
-            isKeySelected 
-              ? 'bg-green-500/10 border-green-500/30 text-green-400' 
-              : 'bg-orange-500/20 text-orange-400 border-orange-500/50 animate-pulse shadow-lg shadow-orange-500/20'
-          }`}
-        >
-          {isKeySelected ? <ShieldCheck className="w-3.5 h-3.5" /> : <Key className="w-3.5 h-3.5" />}
-          {isKeySelected ? 'Key Connected' : 'Connect Key to Start'}
-        </button>
+        <div className="flex items-center gap-3">
+          <a 
+            href="https://ai.google.dev/gemini-api/docs/billing" 
+            target="_blank" 
+            rel="noopener noreferrer"
+            className="hidden md:flex items-center gap-1 text-[9px] font-bold text-slate-500 hover:text-white transition-colors"
+          >
+            Billing Info <ExternalLink className="w-2.5 h-2.5" />
+          </a>
+          <button 
+            onClick={handleOpenKey}
+            className={`flex items-center gap-2 px-5 py-2 rounded-full border transition-all text-[10px] font-black uppercase ${
+              isKeySelected 
+                ? 'bg-green-500/10 border-green-500/30 text-green-400' 
+                : 'bg-orange-500/20 text-orange-400 border-orange-500/50 animate-pulse shadow-lg shadow-orange-500/20'
+            }`}
+          >
+            {isKeySelected ? <ShieldCheck className="w-3.5 h-3.5" /> : <Key className="w-3.5 h-3.5" />}
+            {isKeySelected ? 'Key Connected' : 'Connect Key to Start'}
+          </button>
+        </div>
       </nav>
 
       <main className="flex-1 container mx-auto p-4 md:p-10 flex flex-col lg:flex-row gap-10">
