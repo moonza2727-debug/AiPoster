@@ -13,7 +13,9 @@ import {
   Key,
   Layers,
   Maximize2,
-  CheckCircle2
+  CheckCircle2,
+  Type as TypeIcon,
+  Tag
 } from 'lucide-react';
 import { AspectRatio, GeneratedPoster } from './types';
 import { STYLE_PRESETS, ASPECT_RATIOS, LOADING_MESSAGES } from './constants';
@@ -25,6 +27,7 @@ interface Logo {
 }
 
 const App: React.FC = () => {
+  // --- States ---
   const [prompt, setPrompt] = useState('');
   const [posterText, setPosterText] = useState('');
   const [styleIndex, setStyleIndex] = useState(0);
@@ -43,124 +46,133 @@ const App: React.FC = () => {
   
   const canvasRef = useRef<HTMLCanvasElement>(null);
 
-  // ตรวจสอบสถานะ Key เบื้องต้น
+  // --- Effects ---
   useEffect(() => {
-    const checkStatus = async () => {
+    const checkKey = async () => {
       const ok = await hasApiKey();
-      if (ok) setIsKeyReady(true);
+      setIsKeyReady(ok);
     };
-    checkStatus();
+    checkKey();
+    // เช็คซ้ำทุก 2 วินาทีเผื่อผู้ใช้เพิ่งเลือก Key
+    const timer = setInterval(checkKey, 2000);
+    return () => clearInterval(timer);
   }, []);
 
+  // --- Handlers ---
   const handleConnect = async () => {
+    setError(null);
     try {
       await openKeySelector();
-      setIsKeyReady(true); // สมมติว่าสำเร็จตามกฎ Race Condition
-      setError(null);
+      setIsKeyReady(true);
     } catch (e) {
-      console.error("Connection error:", e);
+      console.error(e);
     }
   };
 
-  const processLogo = (url: string): Promise<string> => {
+  const processImage = (file: File): Promise<string> => {
     return new Promise((resolve) => {
+      const reader = new FileReader();
+      reader.onload = (e) => resolve(e.target?.result as string);
+      reader.readAsDataURL(file);
+    });
+  };
+
+  const handleProductUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (file) {
+      const data = await processImage(file);
+      setProductImage(data);
+    }
+  };
+
+  const handleLogoUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (file) {
+      const data = await processImage(file);
+      // Simple "white to transparent" processing
       const img = new Image();
-      img.src = url;
+      img.src = data;
       img.onload = () => {
         const canvas = document.createElement('canvas');
         canvas.width = img.width;
         canvas.height = img.height;
         const ctx = canvas.getContext('2d');
-        if (!ctx) return resolve(url);
-        ctx.drawImage(img, 0, 0);
-        const imageData = ctx.getImageData(0, 0, canvas.width, canvas.height);
-        const data = imageData.data;
-        for (let i = 0; i < data.length; i += 4) {
-          // ลบสีขาว/ใกล้ขาวออก
-          if (data[i] > 230 && data[i+1] > 230 && data[i+2] > 230) data[i+3] = 0;
+        if (ctx) {
+          ctx.drawImage(img, 0, 0);
+          const imageData = ctx.getImageData(0, 0, canvas.width, canvas.height);
+          for (let i = 0; i < imageData.data.length; i += 4) {
+            if (imageData.data[i] > 240 && imageData.data[i+1] > 240 && imageData.data[i+2] > 240) {
+              imageData.data[i+3] = 0;
+            }
+          }
+          ctx.putImageData(imageData, 0, 0);
+          setLogos(prev => [...prev, { id: Date.now().toString(), url: canvas.toDataURL() }]);
         }
-        ctx.putImageData(imageData, 0, 0);
-        resolve(canvas.toDataURL());
       };
-    });
-  };
-
-  const handleProductUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
-    const file = e.target.files?.[0];
-    if (!file) return;
-    const reader = new FileReader();
-    reader.onload = (event) => setProductImage(event.target?.result as string);
-    reader.readAsDataURL(file);
-  };
-
-  const handleLogoUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
-    const file = e.target.files?.[0];
-    if (!file) return;
-    const reader = new FileReader();
-    reader.onload = async (event) => {
-      const processed = await processLogo(event.target?.result as string);
-      setLogos(prev => [...prev, { id: Date.now().toString(), url: processed }]);
-    };
-    reader.readAsDataURL(file);
+    }
   };
 
   const handleAiSlogan = async () => {
-    if (!prompt.trim()) return;
+    if (!prompt.trim()) {
+      setError("กรุณาใส่ชื่อหรือรายละเอียดสินค้าก่อน");
+      return;
+    }
     setIsSloganLoading(true);
+    setError(null);
     try {
-      const res = await generatePosterSlogan(prompt);
-      setAiSlogans(res);
+      const suggestions = await generatePosterSlogan(prompt);
+      setAiSlogans(suggestions);
     } catch (e) {
-      setError("ไม่สามารถดึงข้อมูลสโลแกนได้");
+      setError("AI คิดสโลแกนไม่สำเร็จ กรุณาลองใหม่");
     } finally {
       setIsSloganLoading(false);
     }
   };
 
   const handleGenerate = async () => {
+    // 1. ตรวจสอบ Key
     if (!isKeyReady) {
       await handleConnect();
       return;
     }
-    
+
+    // 2. ตรวจสอบข้อมูล
     if (!prompt.trim() && !productImage) {
-      setError("กรุณาใส่ชื่อสินค้าหรืออัปโหลดรูปภาพครับ");
+      setError("กรุณาใส่ชื่อสินค้า หรืออัปโหลดรูปภาพสินค้า");
       return;
     }
-    
+
     setError(null);
     setIsGenerating(true);
-    
+
     try {
       const result = await generatePosterImage({
-        prompt: prompt || "Premium Nan product",
-        style: STYLE_PRESETS[styleIndex].label as any, 
+        prompt: prompt || "Premium product",
+        style: STYLE_PRESETS[styleIndex].label as any,
         aspectRatio,
         highQuality: true,
         baseImage: productImage || undefined,
         removeBackground,
-        posterText: posterText 
+        posterText: posterText
       });
-      
+
       const newPoster: GeneratedPoster = {
         id: Date.now().toString(),
         url: result,
-        prompt,
+        prompt: prompt,
         style: STYLE_PRESETS[styleIndex].label as any,
-        aspectRatio,
+        aspectRatio: aspectRatio,
         timestamp: Date.now()
       };
-      
+
       setCurrentPoster(newPoster);
       setHistory(prev => [newPoster, ...prev].slice(0, 10));
     } catch (err: any) {
-      console.error("Generation error:", err);
-      if (err.message === "MISSING_KEY" || err.message === "KEY_INVALID") {
+      if (err.message === "KEY_INVALID" || err.message === "KEY_NOT_FOUND") {
         setIsKeyReady(false);
-        setError("กรุณาเชื่อมต่อ API Key ใหม่อีกครั้งครับ (แนะนำใช้ Key จากโปรเจกต์ที่ผูกบัตร)");
-        handleConnect();
+        setError("API Key ของคุณไม่ถูกต้อง หรือไม่ได้เปิดใช้งาน Billing (Paid Project)");
       } else {
-        setError(err.message || "เกิดข้อผิดพลาดในการสร้างภาพ");
+        setError(err.message || "เกิดข้อผิดพลาดทางเทคนิค กรุณาลองใหม่");
       }
     } finally {
       setIsGenerating(false);
@@ -172,9 +184,11 @@ const App: React.FC = () => {
     const canvas = canvasRef.current;
     const ctx = canvas.getContext('2d');
     if (!ctx) return;
-    
+
     const mainImg = new Image();
+    mainImg.crossOrigin = "anonymous";
     mainImg.src = currentPoster.url;
+    
     await new Promise(r => mainImg.onload = r);
     canvas.width = mainImg.width;
     canvas.height = mainImg.height;
@@ -190,235 +204,225 @@ const App: React.FC = () => {
       ctx.drawImage(logoImg, canvas.width - (logoSize + 40), 40 + (i * (h + 20)), logoSize, h);
     }
 
-    // วาดข้อความ
+    // วาดข้อความ (ถ้ามี)
     if (posterText) {
-      ctx.font = `bold ${canvas.width * 0.08}px Prompt`;
+      ctx.font = `bold ${canvas.width * 0.07}px Prompt`;
       ctx.fillStyle = 'white';
       ctx.textAlign = 'center';
-      ctx.shadowColor = 'black';
-      ctx.shadowBlur = 20;
-      ctx.fillText(posterText.toUpperCase(), canvas.width / 2, canvas.height - 80);
+      ctx.shadowColor = 'rgba(0,0,0,0.8)';
+      ctx.shadowBlur = 15;
+      ctx.fillText(posterText, canvas.width / 2, canvas.height - (canvas.height * 0.1));
     }
 
     const link = document.createElement('a');
+    link.download = `poster-${Date.now()}.png`;
     link.href = canvas.toDataURL('image/png');
-    link.download = `nan-poster-${Date.now()}.png`;
     link.click();
   };
 
   return (
-    <div className="min-h-screen bg-[#020408] text-slate-200 flex flex-col font-['Prompt']">
-      <nav className="border-b border-white/5 bg-black/60 backdrop-blur-2xl sticky top-0 z-50 px-6 py-4 flex items-center justify-between shadow-2xl">
+    <div className="min-h-screen bg-[#03060b] text-slate-200 flex flex-col font-['Prompt']">
+      {/* Header */}
+      <nav className="border-b border-white/5 bg-black/40 backdrop-blur-xl sticky top-0 z-50 px-6 py-4 flex items-center justify-between">
         <div className="flex items-center gap-3">
-          <div className="bg-amber-500 p-2.5 rounded-2xl shadow-lg shadow-amber-500/20"><Sparkles className="w-5 h-5 text-black" /></div>
+          <div className="bg-amber-500 p-2 rounded-xl"><Sparkles className="w-5 h-5 text-black" /></div>
           <div>
-            <h1 className="text-xl font-black tracking-tight flex items-center gap-2">AI POSTER <span className="bg-amber-500/10 px-2 py-0.5 rounded text-[10px] text-amber-500 border border-amber-500/20">PRO</span></h1>
-            <p className="text-[9px] text-slate-500 font-bold uppercase tracking-[0.2em]">Nan Provincial Smart Branding</p>
+            <h1 className="text-lg font-bold">AI POSTER PRO</h1>
+            <p className="text-[10px] text-amber-500/80 uppercase tracking-widest">Nan Smart Marketing</p>
           </div>
         </div>
         
         <button 
-          onClick={handleConnect} 
-          className={`px-6 py-2.5 rounded-full text-[11px] font-black uppercase flex items-center gap-2 transition-all shadow-xl ${isKeyReady ? 'bg-emerald-500/20 text-emerald-400 border border-emerald-500/30' : 'bg-orange-600 text-white animate-pulse'}`}
+          onClick={handleConnect}
+          className={`px-4 py-2 rounded-full text-[11px] font-bold flex items-center gap-2 border transition-all ${isKeyReady ? 'border-emerald-500/30 bg-emerald-500/10 text-emerald-400' : 'border-amber-500/50 bg-amber-500/10 text-amber-500 animate-pulse'}`}
         >
           {isKeyReady ? <CheckCircle2 className="w-4 h-4" /> : <Key className="w-4 h-4" />}
-          {isKeyReady ? 'เชื่อมต่อระบบแล้ว' : 'คลิกเพื่อเชื่อมต่อระบบ'}
+          {isKeyReady ? 'เชื่อมต่อแล้ว' : 'เชื่อมต่อ API Key'}
         </button>
       </nav>
 
-      <main className="flex-1 container mx-auto p-4 md:p-8 flex flex-col lg:flex-row gap-10">
-        <div className="w-full lg:w-[420px] flex flex-col gap-6">
-          <div className="bg-white/[0.03] border border-white/10 rounded-[40px] p-8 space-y-8 shadow-2xl backdrop-blur-sm">
+      <main className="flex-1 container mx-auto p-4 lg:p-8 flex flex-col lg:grid lg:grid-cols-12 gap-8">
+        
+        {/* Left Panel: Controls */}
+        <div className="lg:col-span-4 space-y-6">
+          <div className="glass rounded-[32px] p-6 space-y-6 border border-white/10">
             
-            {/* 01. Upload Product */}
-            <section className="space-y-4">
+            {/* Step 1: Product Image */}
+            <div className="space-y-3">
               <div className="flex justify-between items-center">
-                <h3 className="text-[11px] font-black text-amber-500 uppercase tracking-[0.2em] flex items-center gap-2"><Layers className="w-4 h-4" /> 01. รูปสินค้า</h3>
-                <button onClick={() => setRemoveBackground(!removeBackground)} className={`px-3 py-1.5 rounded-full text-[10px] font-bold transition-all border ${removeBackground ? 'bg-amber-500 text-black border-amber-500' : 'bg-white/5 text-slate-500 border-white/5'}`}>
-                  {removeBackground ? 'ตัดพื้นหลัง' : 'ใช้พื้นเดิม'}
+                <label className="text-[11px] font-bold text-amber-500 uppercase flex items-center gap-2 tracking-widest"><Layers className="w-4 h-4" /> 01. รูปสินค้า</label>
+                <button 
+                  onClick={() => setRemoveBackground(!removeBackground)}
+                  className={`text-[9px] px-2 py-1 rounded-md border transition-all ${removeBackground ? 'bg-amber-500 text-black border-amber-500' : 'bg-white/5 text-slate-500 border-white/5'}`}
+                >
+                  {removeBackground ? 'AI ตัดฉากหลังให้' : 'ใช้พื้นหลังเดิม'}
                 </button>
               </div>
-              <label className="border-2 border-dashed border-white/10 rounded-[30px] h-48 flex flex-col items-center justify-center cursor-pointer hover:border-amber-500/50 transition-all overflow-hidden bg-black/40 group relative">
+              <label className="block w-full h-40 border-2 border-dashed border-white/10 rounded-2xl bg-black/40 hover:border-amber-500/50 transition-all cursor-pointer overflow-hidden relative group">
                 <input type="file" className="hidden" accept="image/*" onChange={handleProductUpload} />
-                {productImage ? <img src={productImage} className="w-full h-full object-contain p-4" /> : (
-                  <div className="text-center">
-                    <ImageIcon className="w-8 h-8 text-slate-600 group-hover:text-amber-500 mx-auto mb-3" />
-                    <p className="text-[10px] font-black uppercase tracking-widest text-slate-500">เลือกรูปสินค้า</p>
+                {productImage ? (
+                  <img src={productImage} className="w-full h-full object-contain p-4" />
+                ) : (
+                  <div className="h-full flex flex-col items-center justify-center text-slate-500 group-hover:text-amber-500 transition-colors">
+                    <ImageIcon className="w-8 h-8 mb-2" />
+                    <span className="text-[10px] font-bold uppercase tracking-widest">คลิกเพื่ออัปโหลด</span>
                   </div>
                 )}
               </label>
-            </section>
+            </div>
 
-            {/* 02. Aspect Ratio */}
-            <section className="space-y-4">
-              <h3 className="text-[11px] font-black text-amber-500 uppercase tracking-[0.2em] flex items-center gap-2"><Maximize2 className="w-4 h-4" /> 02. เลือกขนาด</h3>
-              <div className="grid grid-cols-3 gap-2">
-                {ASPECT_RATIOS.map((ratio) => (
-                  <button 
-                    key={ratio.id} 
-                    onClick={() => setAspectRatio(ratio.id as any)}
-                    className={`px-3 py-2.5 rounded-xl border text-[10px] font-black transition-all ${aspectRatio === ratio.id ? 'bg-white text-black border-white shadow-xl scale-105' : 'bg-white/5 border-white/5 text-slate-500 hover:bg-white/10'}`}
-                  >
-                    {ratio.label.split(' ')[0]}
-                  </button>
+            {/* Step 2: Info & Slogan */}
+            <div className="space-y-3">
+              <div className="flex justify-between items-center">
+                <label className="text-[11px] font-bold text-amber-500 uppercase flex items-center gap-2 tracking-widest"><TypeIcon className="w-4 h-4" /> 02. ข้อมูลสินค้า</label>
+                <button 
+                  onClick={handleAiSlogan}
+                  disabled={isSloganLoading}
+                  className="text-[10px] text-amber-400 font-bold hover:underline disabled:opacity-50"
+                >
+                  {isSloganLoading ? 'กำลังคิด...' : 'AI ช่วยคิดสโลแกน'}
+                </button>
+              </div>
+              <textarea 
+                value={prompt}
+                onChange={e => setPrompt(e.target.value)}
+                placeholder="พิมพ์ชื่อสินค้าหรือจุดเด่น เช่น 'กาแฟอาราบิก้าน่าน คั่วกลาง'..."
+                className="w-full bg-black/40 border border-white/10 rounded-xl p-3 text-xs focus:border-amber-500/50 outline-none h-20 resize-none"
+              />
+              <div className="flex flex-wrap gap-2">
+                {aiSlogans.map((s, i) => (
+                  <button key={i} onClick={() => setPosterText(s)} className="text-[9px] px-2 py-1 bg-white/5 border border-white/10 rounded-lg hover:border-amber-500/50 transition-all">{s}</button>
                 ))}
               </div>
-            </section>
+              <input 
+                type="text"
+                value={posterText}
+                onChange={e => setPosterText(e.target.value)}
+                placeholder="ข้อความที่อยากให้แสดงบนโปสเตอร์"
+                className="w-full bg-black/40 border border-white/10 rounded-xl px-4 py-2.5 text-xs focus:border-amber-500/50 outline-none"
+              />
+            </div>
 
-            {/* 03. Product Info */}
-            <section className="space-y-4">
-               <div className="flex justify-between items-center">
-                 <span className="text-[10px] font-black text-slate-500 uppercase tracking-widest">03. รายละเอียด & สโลแกน</span>
-                 <button onClick={handleAiSlogan} disabled={isSloganLoading} className="text-[10px] text-amber-500 font-bold hover:underline">AI ช่วยคิด</button>
-               </div>
-                <textarea 
-                  value={prompt} 
-                  onChange={e => setPrompt(e.target.value)}
-                  placeholder="เช่น กาแฟดริปเมืองน่าน หอมกลิ่นป่าเขาสก..."
-                  className="w-full bg-black/60 border border-white/10 rounded-2xl p-4 text-xs outline-none focus:border-amber-500/50 h-24 transition-all resize-none"
-                />
-                {aiSlogans.length > 0 && (
-                  <div className="flex flex-wrap gap-2">
-                    {aiSlogans.map((s, i) => (
-                      <button key={i} onClick={() => setPosterText(s)} className="text-[9px] bg-white/5 px-2 py-1 rounded-lg border border-white/5 hover:border-amber-500/50 transition-all active:scale-95">{s}</button>
-                    ))}
-                  </div>
-                )}
-                <input 
-                  type="text" 
-                  value={posterText} 
-                  onChange={e => setPosterText(e.target.value)}
-                  placeholder="คำพาดหัวในภาพ..."
-                  className="w-full bg-black/40 border border-white/5 rounded-xl px-4 py-3 text-xs outline-none focus:border-amber-500/50"
-                />
-            </section>
-
-            {/* 04. Styles */}
-            <section className="space-y-4">
-              <h3 className="text-[11px] font-black text-amber-500 uppercase tracking-[0.2em] flex items-center gap-2"><Settings2 className="w-4 h-4" /> 04. เลือกสไตล์ฉากหลัง</h3>
-              <div className="grid grid-cols-2 gap-2">
-                {STYLE_PRESETS.map((style, i) => (
-                  <button key={i} onClick={() => setStyleIndex(i)} className={`text-[10px] p-3 rounded-2xl border transition-all font-bold ${styleIndex === i ? 'bg-amber-500 text-black border-amber-500 shadow-xl' : 'bg-white/5 border-white/5 text-slate-500 hover:bg-white/10'}`}>
-                    {style.label}
-                  </button>
-                ))}
+            {/* Step 3: Style & Ratio */}
+            <div className="grid grid-cols-2 gap-4">
+              <div className="space-y-3">
+                <label className="text-[11px] font-bold text-amber-500 uppercase tracking-widest flex items-center gap-2"><Settings2 className="w-4 h-4" /> 03. สไตล์</label>
+                <select 
+                  value={styleIndex}
+                  onChange={e => setStyleIndex(Number(e.target.value))}
+                  className="w-full bg-black/40 border border-white/10 rounded-xl px-3 py-2 text-[11px] focus:border-amber-500/50 outline-none"
+                >
+                  {STYLE_PRESETS.map((s, i) => <option key={i} value={i}>{s.label}</option>)}
+                </select>
               </div>
-            </section>
+              <div className="space-y-3">
+                <label className="text-[11px] font-bold text-amber-500 uppercase tracking-widest flex items-center gap-2"><Maximize2 className="w-4 h-4" /> 04. ขนาด</label>
+                <select 
+                  value={aspectRatio}
+                  onChange={e => setAspectRatio(e.target.value as any)}
+                  className="w-full bg-black/40 border border-white/10 rounded-xl px-3 py-2 text-[11px] focus:border-amber-500/50 outline-none"
+                >
+                  {ASPECT_RATIOS.map(r => <option key={r.id} value={r.id}>{r.label}</option>)}
+                </select>
+              </div>
+            </div>
 
-            {/* 05. Logo Upload (Re-added) */}
-            <section className="space-y-4">
-              <h3 className="text-[11px] font-black text-slate-500 uppercase tracking-widest">05. โลโก้แบรนด์</h3>
-              <div className="flex gap-3 flex-wrap">
+            {/* Step 5: Logos */}
+            <div className="space-y-3">
+              <label className="text-[11px] font-bold text-amber-500 uppercase tracking-widest flex items-center gap-2"><Tag className="w-4 h-4" /> 05. โลโก้แบรนด์</label>
+              <div className="flex flex-wrap gap-2">
                 {logos.map(l => (
-                  <div key={l.id} className="relative w-14 h-14 bg-white/10 rounded-2xl p-2 group border border-white/10">
+                  <div key={l.id} className="relative w-12 h-12 bg-white/10 rounded-xl p-1.5 border border-white/10 group">
                     <img src={l.url} className="w-full h-full object-contain" />
-                    <button onClick={() => setLogos(prev => prev.filter(x => x.id !== l.id))} className="absolute -top-2 -right-2 bg-red-600 text-white rounded-full p-1 opacity-0 group-hover:opacity-100 transition-opacity">
-                      <X className="w-3 h-3" />
+                    <button onClick={() => setLogos(prev => prev.filter(x => x.id !== l.id))} className="absolute -top-1.5 -right-1.5 bg-red-500 rounded-full p-0.5 opacity-0 group-hover:opacity-100 transition-all">
+                      <X className="w-3 h-3 text-white" />
                     </button>
                   </div>
                 ))}
-                <label className="w-14 h-14 border-2 border-dashed border-white/10 rounded-2xl flex items-center justify-center cursor-pointer hover:bg-white/5 transition-colors group">
+                <label className="w-12 h-12 border-2 border-dashed border-white/10 rounded-xl flex items-center justify-center cursor-pointer hover:border-amber-500/50 transition-all">
                   <input type="file" className="hidden" accept="image/*" onChange={handleLogoUpload} />
-                  <Plus className="w-6 h-6 text-slate-600 group-hover:text-amber-500 transition-colors" />
+                  <Plus className="w-5 h-5 text-slate-500" />
                 </label>
               </div>
-            </section>
+            </div>
 
+            {/* Error Message */}
             {error && (
-              <div className="bg-red-500/10 border border-red-500/20 p-4 rounded-3xl flex gap-3 items-center animate-in fade-in duration-300">
-                <AlertTriangle className="w-5 h-5 text-red-500 shrink-0" />
-                <p className="text-[10px] text-red-400 font-black uppercase tracking-wider leading-relaxed">{error}</p>
+              <div className="bg-red-500/10 border border-red-500/20 p-3 rounded-2xl flex items-start gap-2 text-red-400">
+                <AlertTriangle className="w-4 h-4 shrink-0 mt-0.5" />
+                <p className="text-[10px] font-bold leading-tight">{error}</p>
               </div>
             )}
 
+            {/* Generate Button */}
             <button 
               onClick={handleGenerate}
               disabled={isGenerating}
-              className={`w-full py-5 rounded-[30px] font-black text-sm flex items-center justify-center gap-3 shadow-2xl transition-all active:scale-95 disabled:opacity-50 ${isKeyReady ? 'bg-gradient-to-br from-amber-400 to-orange-600 text-black shadow-orange-600/20' : 'bg-orange-600 text-white animate-bounce'}`}
+              className={`w-full py-4 rounded-2xl font-bold flex items-center justify-center gap-2 transition-all active:scale-95 disabled:opacity-50 ${isKeyReady ? 'bg-amber-500 text-black' : 'bg-orange-600 text-white animate-pulse'}`}
             >
-              {isGenerating ? <RefreshCw className="w-5 h-5 animate-spin" /> : <Sparkles className="w-5 h-5" />}
-              {isGenerating ? 'AI กำลังเนรมิตภาพ...' : isKeyReady ? 'เนรมิตโปสเตอร์สินค้า' : 'กรุณาเชื่อมต่อระบบก่อน'}
+              {isGenerating ? <RefreshCw className="w-4 h-4 animate-spin" /> : <Sparkles className="w-4 h-4" />}
+              {isGenerating ? 'กำลังสร้างภาพ...' : isKeyReady ? 'เนรมิตโปสเตอร์' : 'กรุณาเชื่อมต่อ Key'}
             </button>
           </div>
         </div>
 
-        {/* Preview Area */}
-        <div className="flex-1 flex flex-col gap-8">
-          <div className="bg-white/[0.02] border border-white/5 rounded-[60px] flex-1 min-h-[600px] relative overflow-hidden flex flex-col items-center justify-center shadow-inner group">
+        {/* Right Panel: Preview */}
+        <div className="lg:col-span-8 flex flex-col gap-6">
+          <div className="bg-white/[0.02] border border-white/5 rounded-[40px] flex-1 min-h-[500px] flex flex-col items-center justify-center relative p-6">
             {isGenerating ? (
-              <div className="text-center space-y-8 p-12 animate-in fade-in duration-500">
-                <div className="relative w-24 h-24 mx-auto">
-                  <div className="absolute inset-0 border-4 border-amber-500/10 rounded-full animate-pulse"></div>
-                  <div className="absolute inset-0 border-4 border-amber-500 border-t-transparent rounded-full animate-spin"></div>
-                </div>
-                <div className="space-y-2">
-                  <p className="text-sm font-black text-white italic uppercase tracking-widest">{LOADING_MESSAGES[Math.floor(Math.random() * LOADING_MESSAGES.length)]}</p>
-                  <p className="text-[10px] text-slate-600 uppercase tracking-[0.5em] font-bold">Powered by Gemini AI</p>
-                </div>
+              <div className="text-center space-y-4">
+                <div className="w-16 h-16 border-4 border-amber-500 border-t-transparent rounded-full animate-spin mx-auto"></div>
+                <p className="text-xs font-bold text-amber-500 uppercase tracking-widest animate-pulse">AI กำลังทำงาน...</p>
               </div>
             ) : currentPoster ? (
-              <div className="relative flex flex-col items-center animate-in zoom-in duration-500 w-full p-4 lg:p-12">
-                <canvas ref={canvasRef} className="hidden" />
-                <div className="relative shadow-[0_50px_100px_-20px_rgba(0,0,0,0.6)] rounded-[40px] overflow-hidden border border-white/10 bg-black">
-                  <img src={currentPoster.url} className="max-h-[650px] w-auto block" alt="Generated Poster" />
+              <div className="w-full flex flex-col items-center gap-6 animate-in fade-in zoom-in duration-500">
+                <div className="relative shadow-2xl rounded-3xl overflow-hidden border border-white/10 bg-black max-w-full">
+                  <img src={currentPoster.url} className="max-h-[550px] w-auto" />
                   
-                  {/* Logo Overlays */}
-                  <div className="absolute top-8 right-8 flex flex-col gap-4">
-                    {logos.map(l => (
-                      <img key={l.id} src={l.url} className="w-16 h-16 object-contain drop-shadow-[0_4px_8px_rgba(0,0,0,0.5)]" />
-                    ))}
+                  {/* Visual Overlays */}
+                  <div className="absolute top-6 right-6 flex flex-col gap-3">
+                    {logos.map(l => <img key={l.id} src={l.url} className="w-14 h-14 object-contain" />)}
                   </div>
-
-                  {/* Heading Overlay */}
                   {posterText && (
-                    <div className="absolute bottom-12 inset-x-0 text-center px-10">
-                      <p className="text-white text-4xl lg:text-5xl font-black italic drop-shadow-[0_10px_20px_rgba(0,0,0,0.9)] uppercase leading-none tracking-tighter">
-                        {posterText}
-                      </p>
+                    <div className="absolute bottom-10 inset-x-0 text-center px-6">
+                      <p className="text-white text-3xl font-black italic drop-shadow-lg uppercase">{posterText}</p>
                     </div>
                   )}
                 </div>
-                
-                <div className="flex gap-4 mt-12">
-                  <button onClick={downloadImage} className="bg-white text-black px-12 py-4 rounded-full font-black text-[11px] uppercase tracking-[0.2em] flex items-center gap-3 hover:bg-amber-400 transition-all shadow-2xl active:scale-95">
-                    <Download className="w-5 h-5" /> บันทึกโปสเตอร์ลงเครื่อง
+
+                <div className="flex gap-4">
+                  <button onClick={downloadImage} className="bg-white text-black px-8 py-3 rounded-full font-bold text-[11px] uppercase tracking-widest flex items-center gap-2 hover:bg-amber-400 transition-all shadow-xl">
+                    <Download className="w-4 h-4" /> บันทึกภาพ
                   </button>
-                  <button onClick={() => {setCurrentPoster(null); setError(null);}} className="bg-white/5 text-white p-4 rounded-full hover:bg-white/10 border border-white/10 transition-all">
-                    <X className="w-5 h-5" />
+                  <button onClick={() => setCurrentPoster(null)} className="bg-white/5 text-white p-3 rounded-full hover:bg-white/10 border border-white/10 transition-all">
+                    <X className="w-4 h-4" />
                   </button>
                 </div>
               </div>
             ) : (
-              <div className="text-center opacity-10">
-                <ImageIcon className="w-32 h-32 text-white mx-auto mb-10" />
-                <p className="text-xs uppercase font-black tracking-[1em] text-white">พร้อมเนรมิตผลงาน</p>
+              <div className="text-center opacity-20">
+                <ImageIcon className="w-20 h-20 mx-auto mb-4" />
+                <p className="text-[10px] font-bold uppercase tracking-[0.5em]">Preview Area</p>
               </div>
             )}
           </div>
 
-          {/* History */}
+          {/* History Strip */}
           {history.length > 0 && (
-            <div className="bg-white/[0.03] border border-white/5 rounded-[45px] p-8 shadow-inner">
-              <h4 className="text-[10px] font-black text-slate-600 uppercase mb-6 flex items-center gap-2 tracking-[0.3em]"><History className="w-4 h-4 text-amber-500" /> ผลงานล่าสุด</h4>
-              <div className="flex gap-5 overflow-x-auto pb-4 scrollbar-hide">
-                {history.map(h => (
-                  <button 
-                    key={h.id} 
-                    onClick={() => setCurrentPoster(h)} 
-                    className={`shrink-0 transition-all duration-300 rounded-2xl overflow-hidden border-2 ${currentPoster?.id === h.id ? 'scale-110 border-amber-500 shadow-xl' : 'opacity-30 border-transparent hover:opacity-100'}`}
-                  >
-                    <img src={h.url} className="h-24 w-auto object-cover" />
-                  </button>
-                ))}
-              </div>
+            <div className="flex gap-4 overflow-x-auto pb-2 scrollbar-hide">
+              {history.map(h => (
+                <button 
+                  key={h.id} 
+                  onClick={() => setCurrentPoster(h)}
+                  className={`shrink-0 w-20 h-20 rounded-xl overflow-hidden border-2 transition-all ${currentPoster?.id === h.id ? 'border-amber-500 scale-105 shadow-lg' : 'border-transparent opacity-40 hover:opacity-100'}`}
+                >
+                  <img src={h.url} className="w-full h-full object-cover" />
+                </button>
+              ))}
             </div>
           )}
         </div>
       </main>
-
-      <footer className="p-10 text-center border-t border-white/5 opacity-30">
-        <p className="text-[10px] text-slate-500 font-black uppercase tracking-[0.5em]">© 2025 Nan Provincial Smart Branding Engine</p>
-      </footer>
     </div>
   );
 };
