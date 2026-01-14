@@ -1,17 +1,9 @@
 import { GoogleGenAI, Type } from "@google/genai";
 import { GenerationConfig } from "../types";
 
-const getAIClient = () => {
-  const apiKey = process.env.API_KEY;
-  if (!apiKey || apiKey === "") {
-    throw new Error("MISSING_API_KEY");
-  }
-  return new GoogleGenAI({ apiKey });
-};
-
 export const generatePosterSlogan = async (productInfo: string): Promise<string[]> => {
   try {
-    const ai = getAIClient();
+    const ai = new GoogleGenAI({ apiKey: process.env.API_KEY });
     const response = await ai.models.generateContent({
       model: 'gemini-3-flash-preview',
       contents: [{
@@ -32,27 +24,27 @@ export const generatePosterSlogan = async (productInfo: string): Promise<string[
     return text ? JSON.parse(text) : ["สินค้าคุณภาพดี", "โปรโมชั่นพิเศษ"];
   } catch (e: any) {
     console.error("Slogan Error:", e);
-    return ["สินค้าคุณภาพดี", "โปรโมชั่นพิเศษ", "ของเด็ดเมืองน่าน", "พรีเมียมเกรด A", "คุ้มค่าราคาประหยัด"];
+    return ["สินค้าคุณภาพดี", "โปรโมชั่นพิเศษ", "ของพรีเมียม", "ดีลสุดคุ้ม"];
   }
 };
 
 export const generatePosterImage = async (config: GenerationConfig): Promise<string> => {
-  // บังคับเลือกโมเดลให้ชัดเจน
-  const modelName = config.highQuality === true ? 'gemini-3-pro-image-preview' : 'gemini-2.5-flash-image';
-  console.log(`[AI] กำลังใช้งานโมเดล: ${modelName} (โหมดคุณภาพสูง: ${config.highQuality})`);
+  // บังคับเลือกโมเดลให้ชัดเจนที่สุด
+  const modelName = config.highQuality ? 'gemini-3-pro-image-preview' : 'gemini-2.5-flash-image';
   
-  const ai = getAIClient();
+  // สร้าง instance ใหม่ทุกครั้งก่อนเรียกใช้ เพื่อป้องกัน Key สตาร์ทไม่ติด
+  const ai = new GoogleGenAI({ apiKey: process.env.API_KEY });
+  
   const parts: any[] = [];
-  
-  const stylePrompt = config.style || "Professional product photography";
-  const finalPrompt = `Professional commercial poster for "${config.prompt}". 
-    Text context in poster: "${config.posterText || ''}". 
+  const stylePrompt = config.style || "Professional commercial photography";
+  const finalPrompt = `Professional product poster for "${config.prompt}". 
+    Target context: "${config.posterText || ''}". 
     Style: ${stylePrompt}. 
-    High resolution, 8k, studio lighting, product display. 
-    ${config.removeBackground ? 'Isolated product on a beautiful new artistic background matching the style.' : ''}`;
+    High quality, studio lighting, 8k resolution, advertisement grade.
+    ${config.removeBackground ? 'Isolated product on a clean artistic background.' : ''}`;
 
   if (config.baseImage) {
-    const base64Data = config.baseImage.split(',')[1] || config.baseImage;
+    const base64Data = config.baseImage.includes(',') ? config.baseImage.split(',')[1] : config.baseImage;
     parts.push({
       inlineData: {
         data: base64Data,
@@ -75,18 +67,18 @@ export const generatePosterImage = async (config: GenerationConfig): Promise<str
       }
     });
 
-    const firstCandidateParts = response.candidates?.[0]?.content?.parts;
-    if (firstCandidateParts) {
-      for (const part of firstCandidateParts) {
+    const candidate = response.candidates?.[0];
+    if (candidate?.content?.parts) {
+      for (const part of candidate.content.parts) {
         if (part.inlineData?.data) {
           return `data:image/png;base64,${part.inlineData.data}`;
         }
       }
     }
     
-    throw new Error("AI_RETURNED_NO_IMAGE");
+    throw new Error("AI ไม่ได้ส่งรูปภาพกลับมา กรุณาลองใหม่");
   } catch (error: any) {
-    console.error("Gemini API Error Detail:", error);
+    console.error("Gemini Error:", error);
     throw error;
   }
 };
