@@ -3,10 +3,16 @@ import { GoogleGenAI, Type } from "@google/genai";
 import { GenerationConfig } from "../types";
 
 /**
- * ดึง API KEY ล่าสุดจาก Environment
+ * ดึง API KEY ล่าสุด
+ * ลำดับความสำคัญ: 1. Vercel (Environment Variable) -> 2. Manual (LocalStorage)
  */
 const getAIClient = () => {
-  const apiKey = process.env.API_KEY || "";
+  const systemKey = process.env.API_KEY;
+  const customKey = localStorage.getItem('CUSTOM_API_KEY');
+  
+  // ใช้คีย์จาก Vercel ก่อน ถ้าไม่มี (หรือเป็นค่าว่าง) ค่อยใช้คีย์ที่ผู้ใช้กรอกเอง
+  const apiKey = (systemKey && systemKey.trim() !== "") ? systemKey : (customKey || "");
+  
   return new GoogleGenAI({ apiKey });
 };
 
@@ -39,8 +45,6 @@ export const generatePosterSlogan = async (productInfo: string): Promise<string[
 
 export const generatePosterImage = async (config: GenerationConfig): Promise<string> => {
   const modelName = config.highQuality ? 'gemini-3-pro-image-preview' : 'gemini-2.5-flash-image';
-  
-  // สร้างอินสแตนซ์ใหม่ทุกครั้งเพื่อให้แน่ใจว่าใช้ Key ล่าสุดจากระบบ
   const ai = getAIClient();
   
   const parts: any[] = [];
@@ -83,11 +87,9 @@ export const generatePosterImage = async (config: GenerationConfig): Promise<str
       }
     }
     
-    throw new Error("AI ไม่สามารถสร้างภาพได้ในขณะนี้ กรุณาลองใหม่หรือตรวจสอบการตั้งค่า");
+    throw new Error("AI ไม่สามารถสร้างภาพได้ในขณะนี้ กรุณาลองใหม่");
   } catch (error: any) {
-    console.error("Gemini API Error Response:", error);
-    
-    // ส่ง Error Message กลับไปให้ App จัดการต่อ
+    console.error("Gemini API Error:", error);
     const errorMessage = error.message || error.toString() || "";
     throw new Error(errorMessage);
   }
