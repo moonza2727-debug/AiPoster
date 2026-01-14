@@ -100,7 +100,7 @@ const App: React.FC = () => {
       setAiSlogans(suggestions);
     } catch (e: any) {
       if (e.message === "MISSING_API_KEY") {
-        setError("ไม่พบ API Key: โปรด Redeploy บน Vercel");
+        setError("ไม่พบ API Key: โปรดตั้งค่า Key ของคุณก่อน");
       } else {
         setError("AI คิดสโลแกนไม่ได้ชั่วคราว: " + e.message);
       }
@@ -115,13 +115,25 @@ const App: React.FC = () => {
       setError("กรุณาใส่ชื่อสินค้าหรือรูปภาพ");
       return;
     }
+
+    // ตรวจสอบ API Key ก่อนใช้โมเดล Pro ตามข้อกำหนด
+    const isHighQuality = true;
+    if (isHighQuality && (window as any).aistudio) {
+      const hasKey = await (window as any).aistudio.hasSelectedApiKey();
+      if (!hasKey) {
+        await (window as any).aistudio.openSelectKey();
+        // Assume selection successful and proceed
+      }
+    }
+
     setIsGenerating(true);
     try {
       const result = await generatePosterImage({
         prompt: prompt || "Premium product",
-        style: STYLE_PRESETS[styleIndex].label as any,
+        // ส่ง prompt ของสไตล์ไปให้ AI แทนแค่ชื่อ Label
+        style: STYLE_PRESETS[styleIndex].prompt as any,
         aspectRatio,
-        highQuality: true,
+        highQuality: isHighQuality,
         baseImage: productImage || undefined,
         removeBackground,
         posterText: posterText
@@ -140,7 +152,11 @@ const App: React.FC = () => {
       setHistory(prev => [newPoster, ...prev].slice(0, 10));
     } catch (err: any) {
       if (err.message === "MISSING_API_KEY") {
-        setError("❌ ไม่พบ API_KEY ในระบบ: โปรดตรวจสอบหน้า Settings > Environment Variables ใน Vercel ว่าตัวพิมพ์ใหญ่ถูกต้องหรือไม่ และต้องกดปุ่ม Redeploy ด้วยครับ");
+        setError("❌ ไม่พบ API_KEY: โปรดเลือก API Key จากโปรเจกต์ที่มีการเรียกเก็บเงิน (Paid Project)");
+      } else if (err.message?.includes("Requested entity was not found")) {
+        // ตามกฎ: หากพบข้อผิดพลาดนี้ ให้เปิดหน้าต่างเลือก Key ใหม่
+        setError("❌ API Key ไม่ถูกต้องหรือยังไม่ได้ตั้งค่า Billing: กำลังเปิดหน้าต่างเลือก Key ใหม่...");
+        if ((window as any).aistudio) await (window as any).aistudio.openSelectKey();
       } else {
         setError("❌ สร้างภาพไม่สำเร็จ: " + (err.message || "เกิดข้อผิดพลาดไม่ทราบสาเหตุ"));
       }

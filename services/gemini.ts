@@ -2,14 +2,17 @@
 import { GoogleGenAI, Type } from "@google/genai";
 import { GenerationConfig } from "../types";
 
-// Fix: Initialize GoogleGenAI with process.env.API_KEY directly as required by guidelines
+// ฟังก์ชันสร้าง Client โดยใช้ค่าที่ถูกฉีดมาจาก Vite
+// ตามข้อกำหนด: สร้าง instance ใหม่ทุกครั้งเพื่อให้ใช้ Key ล่าสุดที่ผู้ใช้อาจเลือกใหม่ได้
 const getAIClient = () => {
-  if (!process.env.API_KEY || process.env.API_KEY === "") {
+  const apiKey = process.env.API_KEY;
+  if (!apiKey || apiKey === "") {
     throw new Error("MISSING_API_KEY");
   }
-  return new GoogleGenAI({ apiKey: process.env.API_KEY });
+  return new GoogleGenAI({ apiKey });
 };
 
+// ใช้ gemini-3-flash-preview สำหรับงานข้อความที่ต้องการความแม่นยำและการสรุปผล
 export const generatePosterSlogan = async (productInfo: string): Promise<string[]> => {
   try {
     const ai = getAIClient();
@@ -28,7 +31,7 @@ export const generatePosterSlogan = async (productInfo: string): Promise<string[
         }
       }
     });
-    // Fix: Access .text property directly (not as a method)
+    // ดึงค่าจาก .text property (ไม่ใช่ method)
     return JSON.parse(response.text || "[]");
   } catch (e: any) {
     console.error("Slogan Error:", e);
@@ -37,7 +40,9 @@ export const generatePosterSlogan = async (productInfo: string): Promise<string[
   }
 };
 
+// เลือกโมเดลตามคุณภาพที่ผู้ใช้ต้องการ: gemini-3-pro-image-preview (2K) หรือ gemini-2.5-flash-image
 export const generatePosterImage = async (config: GenerationConfig): Promise<string> => {
+  const modelName = config.highQuality ? 'gemini-3-pro-image-preview' : 'gemini-2.5-flash-image';
   const ai = getAIClient();
   const parts: any[] = [];
   
@@ -62,21 +67,27 @@ export const generatePosterImage = async (config: GenerationConfig): Promise<str
 
   try {
     const response = await ai.models.generateContent({
-      model: 'gemini-2.5-flash-image',
+      model: modelName,
       contents: { parts },
       config: {
         imageConfig: {
-          aspectRatio: config.aspectRatio as any
+          aspectRatio: config.aspectRatio as any,
+          // imageSize มีเฉพาะใน gemini-3-pro-image-preview
+          ...(modelName === 'gemini-3-pro-image-preview' ? { imageSize: '2K' } : {})
         }
       }
     });
 
-    // Fix: Iterate through parts to find the image part, as it might not be the first one
-    for (const part of response.candidates?.[0]?.content?.parts || []) {
-      if (part.inlineData?.data) {
-        return `data:image/png;base64,${part.inlineData.data}`;
+    // วนลูปตรวจสอบ part เพื่อหา inlineData (รูปภาพ) ตามแนวทางปฏิบัติ
+    const candidates = response.candidates || [];
+    if (candidates.length > 0) {
+      for (const part of candidates[0].content.parts) {
+        if (part.inlineData) {
+          return `data:image/png;base64,${part.inlineData.data}`;
+        }
       }
     }
+    
     throw new Error("AI_RETURNED_NO_IMAGE");
   } catch (error: any) {
     console.error("Gemini API Error:", error);
